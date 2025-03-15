@@ -1,0 +1,27 @@
+[package]
+name = "sui-indexer-alt-graphql"
+version.workspace = true
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[[bin]]
+name = "sui-indexer-alt-graphql"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-graphql = { workspace = true, features = ["dataloader"] }
+async-graphql-axum.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+clap.workspace = true
+prometheus.workspace = true
+telemetry-subscribers.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
