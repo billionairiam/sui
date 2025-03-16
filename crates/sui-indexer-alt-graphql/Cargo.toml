@@ -20,11 +20,14 @@ async-graphql-axum.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 clap.workspace = true
+const-str.workspace = true
 prometheus.workspace = true
 telemetry-subscribers.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+
+bin-version.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
