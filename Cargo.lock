@@ -13929,6 +13929,7 @@ dependencies = [
  "serde_json",
  "sui-default-config",
  "sui-indexer-alt-metrics",
+ "sui-protocol-config",
  "telemetry-subscribers",
  "thiserror 1.0.69",
  "tokio",
