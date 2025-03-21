@@ -19,8 +19,10 @@ async-graphql = { workspace = true, features = ["dataloader"] }
 async-graphql-axum.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+axum-extra.workspace = true
 clap.workspace = true
 const-str.workspace = true
+headers.workspace = true
 prometheus.workspace = true
 serde.workspace = true
 serde_json.workspace = true
