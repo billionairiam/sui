@@ -13918,6 +13918,7 @@ dependencies = [
  "anyhow",
  "async-graphql",
  "async-graphql-axum",
+ "async-graphql-value",
  "async-trait",
  "axum 0.7.5",
  "axum-extra",
