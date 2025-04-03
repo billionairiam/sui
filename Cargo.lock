@@ -14840,6 +14840,7 @@ dependencies = [
  "diesel",
  "diesel-async",
  "diesel_migrations",
+ "futures",
  "telemetry-subscribers",
  "tempfile",
  "tokio",
