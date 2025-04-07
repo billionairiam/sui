@@ -15,7 +15,7 @@ use async_graphql::{
     Request, Response, ServerError, ServerResult, ValidationResult, Value, Variables,
 };
 use serde_json::json;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -74,7 +74,7 @@ impl Extension for LoggingExt {
 
             // Log internal errors, timeouts, and unknown errors at a higher log level than other errors.
             if is_loud_query(&codes) {
-                info!(%uuid, %addr, query = self.query.lock().unwrap().as_ref().unwrap(), "Query");
+                warn!(%uuid, %addr, query = self.query.lock().unwrap().as_ref().unwrap(), "Query");
             } else {
                 debug!(%uuid, %addr, query = self.query.lock().unwrap().as_ref().unwrap(), "Query");
             }
@@ -164,7 +164,8 @@ impl Extension for LoggingExt {
     }
 }
 
-/// Whether the query should be logged at a "louder" level (e.g. `info!` instead of `debug!`).
+/// Whether the query should be logged at a "louder" level (e.g. `warn!` instead of `debug!`),
+/// because it's related to some problem that we should probably investigate.
 fn is_loud_query(codes: &[&str]) -> bool {
     codes.is_empty()
         || codes
