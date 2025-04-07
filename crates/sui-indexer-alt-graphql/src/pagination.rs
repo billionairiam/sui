@@ -19,7 +19,7 @@ pub(crate) struct PaginationConfig {
     overrides: BTreeMap<(&'static str, &'static str), PageLimits>,
 }
 
-/// The configuration for a single pageinated field.
+/// The configuration for a single paginated field.
 pub(crate) struct PageLimits {
     pub default: u32,
     pub max: u32,
