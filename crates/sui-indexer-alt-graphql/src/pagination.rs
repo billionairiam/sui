@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use async_graphql::registry::MetaField;
 
-/// Configuration for page size limits, specifying a max mult-iget size, as well as a default and
+/// Configuration for page size limits, specifying a max multi-get size, as well as a default and
 /// max page size for each paginated fields. Page limits can be customized for specific fields,
 /// otherwise falling back to a blanket default.
 pub(crate) struct PaginationConfig {
