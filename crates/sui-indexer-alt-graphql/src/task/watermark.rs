@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::ensure;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use diesel::{
     sql_query,
     sql_types::{Array, BigInt, Text},
@@ -259,5 +259,11 @@ impl Watermarks {
         }
 
         Ok(watermarks)
+    }
+
+    /// Timestamp corresponding to high watermark. Can be `None` if the timestamp is out of range
+    /// (should not happen under normal operation).
+    pub(crate) fn timestamp_hi(&self) -> Option<DateTime<Utc>> {
+        DateTime::from_timestamp_millis(self.timestamp_ms_hi_inclusive)
     }
 }
