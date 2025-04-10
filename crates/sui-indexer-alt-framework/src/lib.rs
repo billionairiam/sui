@@ -106,19 +106,14 @@ pub struct Indexer<S: Store> {
 }
 
 impl<S: Store> Indexer<S> {
-    /// Create a new instance of the indexer framework. `database_url`, `db_args`, `indexer_args,`,
-    /// `client_args`, and `ingestion_config` contain configurations for the following,
-    /// respectively:
+    /// Create a new instance of the indexer framework from a store that implements the `Store`
+    /// trait, along with `indexer_args`, `client_args`, and `ingestion_config`. Together, these
+    /// arguments configure the following:
     ///
-    /// - Connecting to the database,
-    /// - What is indexed (which checkpoints, which pipelines, whether to update the watermarks
-    ///   table) and where to serve metrics from,
+    /// - What is indexed (which checkpoints, which pipelines, whether to track and update
+    ///   watermarks) and where to serve metrics from,
     /// - Where to download checkpoints from,
     /// - Concurrency and buffering parameters for downloading checkpoints.
-    ///
-    /// Optional `migrations` contains the SQL to run in order to bring the database schema up-to-date for
-    /// the specific instance of the indexer, generated using diesel's `embed_migrations!` macro.
-    /// These migrations will be run as part of initializing the indexer if provided.
     ///
     /// After initialization, at least one pipeline must be added using [Self::concurrent_pipeline]
     /// or [Self::sequential_pipeline], before the indexer is started using [Self::run].
@@ -165,7 +160,7 @@ impl<S: Store> Indexer<S> {
         })
     }
 
-    /// The database connection pool used by the indexer.
+    /// The store used by the indexer.
     pub fn store(&self) -> &S {
         &self.store
     }
@@ -222,56 +217,6 @@ impl<S: Store> Indexer<S> {
             self.skip_watermark,
             self.store.clone(),
             self.ingestion_service.subscribe().0,
-            self.metrics.clone(),
-            self.cancel.clone(),
-        ));
-
-        Ok(())
-    }
-
-    /// Adds a new pipeline to this indexer and starts it up. Although their tasks have started,
-    /// they will be idle until the ingestion service starts, and serves it checkpoint data.
-    ///
-    /// Sequential pipelines commit checkpoint data in-order which sacrifices throughput, but may
-    /// be required to handle pipelines that modify data in-place (where each update is not an
-    /// insert, but could be a modification of an existing row, where ordering between updates is
-    /// important).
-    ///
-    /// The pipeline can optionally be configured to lag behind the ingestion service by a fixed
-    /// number of checkpoints (configured by `checkpoint_lag`).
-    pub async fn sequential_pipeline<H>(
-        &mut self,
-        handler: H,
-        config: SequentialConfig,
-    ) -> Result<()>
-    where
-        H: Handler<Store = S> + Send + Sync + 'static,
-        S: TransactionalStore,
-    {
-        let Some(watermark) = self.add_pipeline::<H>(false).await? else {
-            return Ok(());
-        };
-
-        if self.skip_watermark {
-            warn!(
-                pipeline = H::NAME,
-                "--skip-watermarks enabled and ignored for sequential pipeline"
-            );
-        }
-
-        // For a sequential pipeline, data must be written in the order of checkpoints.
-        // Hence, we do not allow the first_checkpoint override to be in arbitrary positions.
-        self.check_first_checkpoint_consistency::<H>(&watermark)?;
-
-        let (checkpoint_rx, watermark_tx) = self.ingestion_service.subscribe();
-
-        self.handles.push(sequential::pipeline::<H>(
-            handler,
-            watermark,
-            config,
-            self.store.clone(),
-            checkpoint_rx,
-            watermark_tx,
             self.metrics.clone(),
             self.cancel.clone(),
         ));
@@ -395,5 +340,56 @@ impl<S: Store> Indexer<S> {
             expected_first_checkpoint.min(self.first_checkpoint_from_watermark);
 
         Ok(Some(watermark))
+    }
+}
+
+impl<T: TransactionalStore> Indexer<T> {
+    /// Adds a new pipeline to this indexer and starts it up. Although their tasks have started,
+    /// they will be idle until the ingestion service starts, and serves it checkpoint data.
+    ///
+    /// Sequential pipelines commit checkpoint data in-order which sacrifices throughput, but may
+    /// be required to handle pipelines that modify data in-place (where each update is not an
+    /// insert, but could be a modification of an existing row, where ordering between updates is
+    /// important).
+    ///
+    /// The pipeline can optionally be configured to lag behind the ingestion service by a fixed
+    /// number of checkpoints (configured by `checkpoint_lag`).
+    pub async fn sequential_pipeline<H>(
+        &mut self,
+        handler: H,
+        config: SequentialConfig,
+    ) -> Result<()>
+    where
+        H: Handler<Store = T> + Send + Sync + 'static,
+    {
+        let Some(watermark) = self.add_pipeline::<H>(false).await? else {
+            return Ok(());
+        };
+
+        if self.skip_watermark {
+            warn!(
+                pipeline = H::NAME,
+                "--skip-watermarks enabled and ignored for sequential pipeline"
+            );
+        }
+
+        // For a sequential pipeline, data must be written in the order of checkpoints.
+        // Hence, we do not allow the first_checkpoint override to be in arbitrary positions.
+        self.check_first_checkpoint_consistency::<H>(&watermark)?;
+
+        let (checkpoint_rx, watermark_tx) = self.ingestion_service.subscribe();
+
+        self.handles.push(sequential::pipeline::<H>(
+            handler,
+            watermark,
+            config,
+            self.store.clone(),
+            checkpoint_rx,
+            watermark_tx,
+            self.metrics.clone(),
+            self.cancel.clone(),
+        ));
+
+        Ok(())
     }
 }

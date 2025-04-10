@@ -20,7 +20,11 @@ pub use sui_pg_db as db;
 
 pub const MIGRATIONS: EmbeddedMigrations = sui_pg_db::MIGRATIONS;
 
+/// An opinionated indexer implementation that uses a Postgres database as the store.
 impl Indexer<Db> {
+    /// Create a new temporary database and runs provided migrations in tandem with the migrations
+    /// necessary to support watermark operations on the indexer. The indexer is then instantiated
+    /// and returned along with the temporary database.
     pub async fn new_for_testing(migrations: &'static EmbeddedMigrations) -> (Indexer<Db>, TempDb) {
         let temp_db = TempDb::new().unwrap();
         let store = Db::for_write(temp_db.database().url().clone(), DbArgs::default())
@@ -50,6 +54,8 @@ impl Indexer<Db> {
         (indexer, temp_db)
     }
 
+    /// Returns new migrations derived from the combination of provided migrations and migrations as
+    /// necessitated by the indexer.
     pub fn migrations(
         migrations: Option<&'static EmbeddedMigrations>,
     ) -> impl MigrationSource<Pg> + Send + Sync + 'static {
