@@ -1,15 +1,18 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use anyhow::{Context, Result};
 use diesel::{
     migration::{self, Migration, MigrationSource},
     pg::Pg,
 };
 use diesel_migrations::EmbeddedMigrations;
 use prometheus::Registry;
+use sui_indexer_alt_metrics::db::DbConnectionStatsCollector;
 use sui_pg_db::{temp::TempDb, Db, DbArgs};
 use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 use crate::{
     ingestion::{ClientArgs, IngestionConfig},
@@ -22,6 +25,57 @@ pub const MIGRATIONS: EmbeddedMigrations = sui_pg_db::MIGRATIONS;
 
 /// An opinionated indexer implementation that uses a Postgres database as the store.
 impl Indexer<Db> {
+    /// Create a new instance of the indexer framework. `database_url`, `db_args`, `indexer_args,`,
+    /// `client_args`, and `ingestion_config` contain configurations for the following,
+    /// respectively:
+    ///
+    /// - Connecting to the database,
+    /// - What is indexed (which checkpoints, which pipelines, whether to update the watermarks
+    ///   table) and where to serve metrics from,
+    /// - Where to download checkpoints from,
+    /// - Concurrency and buffering parameters for downloading checkpoints.
+    ///
+    /// Optional `migrations` contains the SQL to run in order to bring the database schema up-to-date for
+    /// the specific instance of the indexer, generated using diesel's `embed_migrations!` macro.
+    /// These migrations will be run as part of initializing the indexer if provided.
+    ///
+    /// After initialization, at least one pipeline must be added using [Self::concurrent_pipeline]
+    /// or [Self::sequential_pipeline], before the indexer is started using [Self::run].
+    pub async fn new_from_pg(
+        database_url: Url,
+        db_args: DbArgs,
+        indexer_args: IndexerArgs,
+        client_args: ClientArgs,
+        ingestion_config: IngestionConfig,
+        migrations: Option<&'static EmbeddedMigrations>,
+        registry: &Registry,
+        cancel: CancellationToken,
+    ) -> Result<Self> {
+        let db = Db::for_write(database_url, db_args) // I guess our store needs a constructor fn
+            .await
+            .context("Failed to connect to database")?;
+
+        // At indexer initialization, we ensure that the DB schema is up-to-date.
+        db.run_migrations(Self::migrations(migrations))
+            .await
+            .context("Failed to run pending migrations")?;
+
+        registry.register(Box::new(DbConnectionStatsCollector::new(
+            Some("indexer_db"),
+            db.clone(),
+        )))?;
+
+        Indexer::<Db>::new(
+            db,
+            indexer_args,
+            client_args,
+            ingestion_config,
+            registry,
+            cancel,
+        )
+        .await
+    }
+
     /// Create a new temporary database and runs provided migrations in tandem with the migrations
     /// necessary to support watermark operations on the indexer. The indexer is then instantiated
     /// and returned along with the temporary database.

@@ -115,7 +115,7 @@ pub async fn setup_indexer(
         .context("Failed to connect to database")?;
 
     // we want to merge &MIGRATIONS with the migrations from the store
-    db.run_migrations(Indexer::<Db>::migrations(Some(&MIGRATIONS)))
+    db.run_migrations(Indexer::migrations(Some(&MIGRATIONS)))
         .await
         .context("Failed to run pending migrations")?;
 

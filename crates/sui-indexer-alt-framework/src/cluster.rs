@@ -12,12 +12,17 @@ use sui_indexer_alt_metrics::{MetricsArgs, MetricsService};
 use tokio::{signal, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+use url::Url;
 
 use crate::{
     ingestion::{ClientArgs, IngestionConfig},
-    store::Store,
     Indexer, IndexerArgs, IndexerMetrics, Result,
 };
+
+#[cfg(feature = "postgres")]
+use crate::db::{Db, DbArgs};
+#[cfg(feature = "postgres")]
+use diesel_migrations::EmbeddedMigrations;
 
 /// Bundle of arguments for setting up an indexer cluster (an Indexer and its associated Metrics
 /// service). This struct is offered as a convenience for the common case of parsing command-line
@@ -37,34 +42,51 @@ pub struct Args {
     metrics_args: MetricsArgs,
 }
 
-/// An [IndexerCluster] combines an [Indexer] with a [MetricsService] and a tracing subscriber
-/// (outputting to stderr) to provide observability. It is a useful starting point for an indexer
-/// binary.
-pub struct IndexerCluster<S: Store> {
-    indexer: Indexer<S>,
+/// An opinionated [IndexerCluster] that spins up an [Indexer] implementation using Postgres as its
+/// store, along with a [MetricsService] and a tracing subscriber (outputting to stderr) to provide
+/// observability. It is a useful starting point for an indexer binary.
+pub struct IndexerCluster {
+    indexer: Indexer<Db>,
     metrics: MetricsService,
 
     /// Cancelling this token signals cancellation to both the indexer and metrics service.
     cancel: CancellationToken,
 }
 
-impl<S: Store> IndexerCluster<S> {
+impl IndexerCluster {
     /// Create a new cluster with most of the configuration set to its default value. Use
     /// [Self::new_with_configs] to construct a cluster with full customization.
-    pub async fn new(store: S, args: Args) -> Result<Self> {
-        Self::new_with_configs(store, args, IngestionConfig::default(), None).await
+    pub async fn new(
+        database_url: Url,
+        args: Args,
+        migrations: Option<&'static EmbeddedMigrations>,
+    ) -> Result<Self> {
+        Self::new_with_configs(
+            database_url,
+            DbArgs::default(),
+            args,
+            IngestionConfig::default(),
+            migrations,
+            None,
+        )
+        .await
     }
 
     /// Create a new cluster.
     ///
+    /// - `database_url` and `db_args` configure its database connection.
     /// - `args` configures where checkpoints are come from, what is indexed and metrics.
     /// - `ingestion_config` controls how the ingestion service is set-up (its concurrency, polling
     ///    intervals, etc).
+    /// - `migrations` are any database migrations the indexer needs to run before starting to
+    ///   ensure the database schema is ready for the data that is about to be committed.
     /// - `metric_label` is an optional custom label to add to metrics reported by this service.
     pub async fn new_with_configs(
-        store: S,
+        database_url: Url,
+        db_args: DbArgs,
         args: Args,
         ingestion_config: IngestionConfig,
+        migrations: Option<&'static EmbeddedMigrations>,
         metric_label: Option<String>,
     ) -> Result<Self> {
         tracing_subscriber::fmt::init();
@@ -76,11 +98,13 @@ impl<S: Store> IndexerCluster<S> {
 
         let metrics = MetricsService::new(args.metrics_args, registry, cancel.child_token());
 
-        let indexer = Indexer::new(
-            store,
+        let indexer = Indexer::new_from_pg(
+            database_url,
+            db_args,
             args.indexer_args,
             args.client_args,
             ingestion_config,
+            migrations,
             metrics.registry(),
             cancel.child_token(),
         )
@@ -134,15 +158,15 @@ impl<S: Store> IndexerCluster<S> {
     }
 }
 
-impl<S: Store> Deref for IndexerCluster<S> {
-    type Target = Indexer<S>;
+impl Deref for IndexerCluster {
+    type Target = Indexer<Db>;
 
     fn deref(&self) -> &Self::Target {
         &self.indexer
     }
 }
 
-impl<S: Store> DerefMut for IndexerCluster<S> {
+impl DerefMut for IndexerCluster {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.indexer
     }
@@ -269,16 +293,7 @@ mod tests {
             metrics_args: MetricsArgs { metrics_address },
         };
 
-        // Prepare store
-        let store = Db::for_write(url.clone(), DbArgs::default()).await.unwrap();
-
-        // Run migrations
-        store
-            .run_migrations(Indexer::<Db>::migrations(None))
-            .await
-            .unwrap();
-
-        let mut indexer = IndexerCluster::new(store, args).await.unwrap();
+        let mut indexer = IndexerCluster::new(url.clone(), args, None).await.unwrap();
 
         indexer
             .concurrent_pipeline(TxCounts, ConcurrentConfig::default())
