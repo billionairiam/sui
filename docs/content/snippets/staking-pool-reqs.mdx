@@ -2,8 +2,49 @@
 
 There are minimum staking requirements a validator must satisfy to become active and to stay in the active validator set.
 
-More precisely:
+#### Current requirements
 
 - A validator candidate must accrue at least 30M SUI of stake before they can request to join the validator set.
-- If an active validator’s stake falls below 20M SUI, they have seven epochs of grace period to gain back the stake before being removed from the validator set.
-- If an active validator’s stake falls below 15M SUI, they are removed from the validator set at the end of the current epoch boundary. Sui uses 24-hour epochs.
+- If an active validator's stake falls below 20M SUI, they have seven epochs of grace period to gain back the stake before being removed from the validator set.
+- If an active validator's stake falls below 15M SUI, they are removed from the validator set at the end of the current epoch boundary. Sui uses 24-hour epochs.
+
+#### Upcoming changes with SIP-39
+
+The Sui network is implementing SIP-39, which will significantly lower the barrier to entry for validators. Instead of requiring a minimum amount of SUI tokens, validators will need a minimum amount of *voting power*:
+
+- The minimum requirement will change from a fixed SUI amount to a voting power threshold of 3 (out of 10,000 total voting power).
+- This will substantially decrease the amount of SUI needed to join the validator set (approximately 3M SUI, with a settled V of 3).
+- This change will be phased in gradually over three phases to ensure network stability.
+
+#### Understanding the voting power formula
+
+SIP-39 uses the following formula to determine if a validator can join the set:
+
+```
+S / (S + T) > V / 10000
+```
+
+Where:
+- S = The validator candidate's stake amount
+- T = Total amount already staked in the network
+- V = Minimum voting power threshold (3 in the final phase)
+- 10000 = Total voting power units in the Sui system
+
+This formula checks if the validator would have at least V voting power after joining. Let's break it down:
+
+1. S / (S + T) calculates what proportion of the total stake the validator would control
+2. When multiplied by 10000, this gives their voting power in Sui's standardized units
+3. The validator can join if this value is greater than or equal to the threshold V
+
+For example, with a network stake of 7.69B SUI and V=3:
+- A validator with 2.31M SUI would have: 2,310,000 / (2,310,000 + 7,694,950,773) ≈ 0.0003 proportion
+- Converting to voting power: 0.0003 × 10000 ≈ 3 units
+- Since 3 ≥ 3, they meet the threshold to join
+
+As the total network stake changes, the minimum required amount will adjust automatically.
+
+---
+
+> ### **Planning on becoming a Sui validator?**
+>
+> **If you're planning on becoming a validator, please [fill out this form](https://forms.gle/REPLACE_WITH_ACTUAL_FORM_URL) to be notified of validator releases, important security releases, technical support, and more.**
