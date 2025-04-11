@@ -82,8 +82,7 @@ impl OffchainStateReader for OffchainReader {
 
         let version = headers
             .remove("x-sui-rpc-version")
-            .map(|v| v.to_str().ok().map(|s| s.to_owned()))
-            .flatten();
+            .and_then(|v| v.to_str().ok().map(|s| s.to_owned()));
 
         let body: Value = response
             .json()
