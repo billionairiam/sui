@@ -21,6 +21,7 @@ async-graphql-value.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
+bcs.workspace = true
 chrono.workspace = true
 clap.workspace = true
 const-str.workspace = true
