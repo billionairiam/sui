@@ -2474,6 +2474,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "thiserror",
+ "tokio",
  "toml",
  "toml_edit 0.22.24",
 ]

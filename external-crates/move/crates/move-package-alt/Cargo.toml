@@ -15,9 +15,10 @@ anyhow.workspace = true
 derive-where.workspace = true
 thiserror.workspace = true
 codespan-reporting.workspace = true
-append-only-vec = "0.1.7"
+append-only-vec = "0.1.7" # TODO: move this into workspace
 external-resolver.workspace = true
 futures.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 move-command-line-common.workspace = true
@@ -26,4 +27,8 @@ insta.workspace = true
 
 [[test]]
 name = "parsing_tests"
+harness = false
+
+[[test]]
+name = "pinning_tests"
 harness = false
