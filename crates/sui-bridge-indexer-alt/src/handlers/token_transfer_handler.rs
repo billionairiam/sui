@@ -1,6 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
-use crate::handlers::BRIDGE;
+use crate::handlers::{is_bridge_txn, BRIDGE};
 use crate::struct_tag;
 use async_trait::async_trait;
 use diesel::query_dsl::methods::FilterDsl;
@@ -62,6 +62,9 @@ impl Processor for TokenTransferHandler {
             .transactions
             .iter()
             .try_fold(vec![], |results, tx| {
+                if !is_bridge_txn(tx) {
+                    return Ok(results);
+                }
                 tx.events.iter().flat_map(|events| &events.data).try_fold(
                     results,
                     |mut results, ev| {
