@@ -109,6 +109,9 @@ split_fungible_staked_sui
 join_fungible_staked_sui
 	public fun
 	0x3::staking_pool
+fungible_staked_sui_data_mut
+	fun
+	0x3::staking_pool
 split
 	public fun
 	0x3::staking_pool
