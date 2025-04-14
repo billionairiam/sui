@@ -412,12 +412,7 @@ fun withdraw_rewards(
 /// Called by `validator` module to activate a staking pool.
 public(package) fun activate_staking_pool(pool: &mut StakingPool, activation_epoch: u64) {
     // Add the initial exchange rate to the table.
-    pool
-        .exchange_rates
-        .add(
-            activation_epoch,
-            initial_exchange_rate(),
-        );
+    pool.exchange_rates.add(activation_epoch, initial_exchange_rate());
     // Check that the pool is preactive and not inactive.
     assert!(pool.is_preactive(), EPoolAlreadyActive);
     assert!(!pool.is_inactive(), EActivationOfInactivePool);
@@ -524,14 +519,17 @@ public fun split(self: &mut StakedSui, split_amount: u64, ctx: &mut TxContext): 
     }
 }
 
+/// Allows calling `.split_to_sender()` on `StakedSui` to invoke `split_staked_sui`
+public use fun split_staked_sui as StakedSui.split_to_sender;
+
 /// Split the given StakedSui to the two parts, one with principal `split_amount`,
 /// transfer the newly split part to the sender address.
 public entry fun split_staked_sui(stake: &mut StakedSui, split_amount: u64, ctx: &mut TxContext) {
     transfer::transfer(stake.split(split_amount, ctx), ctx.sender());
 }
 
-/// Allows calling `.split_to_sender()` on `StakedSui` to invoke `split_staked_sui`
-public use fun split_staked_sui as StakedSui.split_to_sender;
+/// Allows calling `.join()` on `StakedSui` to invoke `join_staked_sui`
+public use fun join_staked_sui as StakedSui.join;
 
 /// Consume the staked sui `other` and add its value to `self`.
 /// Aborts if some of the staking parameters are incompatible (pool id, stake activation epoch, etc.)
@@ -542,9 +540,6 @@ public entry fun join_staked_sui(self: &mut StakedSui, other: StakedSui) {
     id.delete();
     self.principal.join(principal);
 }
-
-/// Allows calling `.join()` on `StakedSui` to invoke `join_staked_sui`
-public use fun join_staked_sui as StakedSui.join;
 
 /// Returns true if all the staking parameters of the staked sui except the principal are identical
 public fun is_equal_staking_metadata(self: &StakedSui, other: &StakedSui): bool {

@@ -1125,12 +1125,7 @@ Called by <code><a href="../sui_system/validator.md#sui_system_validator">valida
 
 <pre><code><b>public</b>(package) <b>fun</b> <a href="../sui_system/staking_pool.md#sui_system_staking_pool_activate_staking_pool">activate_staking_pool</a>(pool: &<b>mut</b> <a href="../sui_system/staking_pool.md#sui_system_staking_pool_StakingPool">StakingPool</a>, activation_epoch: u64) {
     // Add the initial exchange rate to the table.
-    pool
-        .<a href="../sui_system/staking_pool.md#sui_system_staking_pool_exchange_rates">exchange_rates</a>
-        .add(
-            activation_epoch,
-            <a href="../sui_system/staking_pool.md#sui_system_staking_pool_initial_exchange_rate">initial_exchange_rate</a>(),
-        );
+    pool.<a href="../sui_system/staking_pool.md#sui_system_staking_pool_exchange_rates">exchange_rates</a>.add(activation_epoch, <a href="../sui_system/staking_pool.md#sui_system_staking_pool_initial_exchange_rate">initial_exchange_rate</a>());
     // Check that the pool is preactive and not inactive.
     <b>assert</b>!(pool.<a href="../sui_system/staking_pool.md#sui_system_staking_pool_is_preactive">is_preactive</a>(), <a href="../sui_system/staking_pool.md#sui_system_staking_pool_EPoolAlreadyActive">EPoolAlreadyActive</a>);
     <b>assert</b>!(!pool.<a href="../sui_system/staking_pool.md#sui_system_staking_pool_is_inactive">is_inactive</a>(), <a href="../sui_system/staking_pool.md#sui_system_staking_pool_EActivationOfInactivePool">EActivationOfInactivePool</a>);
