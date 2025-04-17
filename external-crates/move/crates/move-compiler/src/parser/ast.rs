@@ -183,6 +183,7 @@ pub type ParsedAttribute = Spanned<ParsedAttribute_>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpectedFailureKind_ {
+    Empty,
     Name(Name),
     MajorStatus(Value),
     AbortCode(AttributeValue),
@@ -195,7 +196,7 @@ pub enum Attribute_ {
     BytecodeInstruction,
     DefinesPrimitive(Name),
     Deprecation {
-        note: Option<Value>,
+        note: Option<Symbol>,
     },
     Error {
         code: Option<Value>,
@@ -831,6 +832,16 @@ impl fmt::Debug for LeadingNameAccess_ {
 //**************************************************************************************************
 // Impl
 //**************************************************************************************************
+
+impl ParsedAttribute_ {
+    pub fn name(&self) -> Spanned<&str> {
+        match self {
+            ParsedAttribute_::Name(name)
+            | ParsedAttribute_::Assigned(name, _)
+            | ParsedAttribute_::Parameterized(name, _) => sp(name.loc, name.value.as_ref()),
+        }
+    }
+}
 
 impl Attribute_ {
     pub fn attribute_name(&self) -> &'static str {

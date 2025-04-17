@@ -1,10 +1,13 @@
 // Copyright (c) The Move Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::u8;
+
 use crate::{
     diag,
     expansion::{
         ast::{self as E, ModuleIdent},
+        byte_string,
         translate::Context,
     },
     ice, ice_assert,
@@ -145,7 +148,7 @@ fn insert_attribute(
 ) -> bool {
     let attr_kind = sp(attr_loc, attr.attribute_kind());
     if let Some(prev_loc) = attr_map.get_loc(&attr_kind) {
-        let msg = format!("Duplicate attribute {attr_kind} attached to the same item");
+        let msg = format!("Duplicate attribute '{attr_kind}' attached to the same item");
         let prev_msg = "Attribute previously given here".to_string();
         context.add_diag(diag!(
             Attributes::Duplicate,
@@ -154,7 +157,9 @@ fn insert_attribute(
         ));
         false
     } else {
-        attr_map.add(attr_kind, sp(attr_loc, attr));
+        attr_map
+            .add(attr_kind, sp(attr_loc, attr))
+            .expect("ICE: failed insert");
         true
     }
 }
@@ -169,9 +174,16 @@ fn attribute(
     let attr_ = match attribute {
         PA::BytecodeInstruction => KA::BytecodeInstruction(A::BytecodeInstructionAttribute),
         PA::DefinesPrimitive(name) => KA::DefinesPrimitive(A::DefinesPrimitiveAttribute { name }),
-        PA::Deprecation { note } => KA::Deprecation(A::DeprecationAttribute {
-            note: context.value_opt(note),
-        }),
+        PA::Deprecation { note } => {
+            let note = note.and_then(|symbol| match byte_string::decode(loc, symbol.as_ref()) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    context.add_diags(e);
+                    None
+                }
+            });
+            KA::Deprecation(A::DeprecationAttribute { note })
+        }
         PA::Error { code } => {
             let code = context
                 .value_opt(code)
@@ -274,26 +286,43 @@ fn ext_attribue(
 fn expected_failure_attribute(
     context: &mut Context,
     attr_loc: &Loc,
-    sp!(_, failure_kind): P::ExpectedFailureKind,
+    sp!(failure_loc, failure_kind): P::ExpectedFailureKind,
     minor_status: Option<P::AttributeValue>,
     location: Option<P::NameAccessChain>,
 ) -> Option<A::ExpectedFailure> {
     match failure_kind {
-        P::ExpectedFailureKind_::Name(name) => {
-            expected_failure_named(context, attr_loc, name, minor_status, location)
-        }
-        P::ExpectedFailureKind_::MajorStatus(value) => {
-            expected_failure_major_status(context, attr_loc, value, minor_status, location)
-        }
-        P::ExpectedFailureKind_::AbortCode(value) => {
-            expected_failure_abort_code(context, attr_loc, value, minor_status, location)
-        }
+        P::ExpectedFailureKind_::Empty => Some(A::ExpectedFailure::Expected),
+        P::ExpectedFailureKind_::Name(name) => expected_failure_named(
+            context,
+            attr_loc,
+            &failure_loc,
+            name,
+            minor_status,
+            location,
+        ),
+        P::ExpectedFailureKind_::MajorStatus(value) => expected_failure_major_status(
+            context,
+            attr_loc,
+            &failure_loc,
+            value,
+            minor_status,
+            location,
+        ),
+        P::ExpectedFailureKind_::AbortCode(value) => expected_failure_abort_code(
+            context,
+            attr_loc,
+            &failure_loc,
+            value,
+            minor_status,
+            location,
+        ),
     }
 }
 
 fn expected_failure_named(
     context: &mut Context,
-    attr_loc: &Loc,
+    _attr_loc: &Loc,
+    failure_loc: &Loc,
     sp!(name_loc, name): Name,
     minor_status: Option<P::AttributeValue>,
     location: Option<P::NameAccessChain>,
@@ -334,7 +363,7 @@ fn expected_failure_named(
             "Expected '{}' following '{name}'",
             TestingAttribute::ERROR_LOCATION
         );
-        context.add_diag(diag!(Attributes::InvalidUsage, (*attr_loc, msg)));
+        context.add_diag(diag!(Attributes::InvalidUsage, (*failure_loc, msg)));
         return None;
     };
     let location = context.name_access_chain_to_module_ident(location)?;
@@ -347,7 +376,8 @@ fn expected_failure_named(
 
 fn expected_failure_major_status(
     context: &mut Context,
-    attr_loc: &Loc,
+    _attr_loc: &Loc,
+    failure_loc: &Loc,
     value: P::Value,
     minor_status: Option<P::AttributeValue>,
     location: Option<P::NameAccessChain>,
@@ -363,8 +393,8 @@ fn expected_failure_major_status(
         let no_code = format!("No status code associated with value '{}'", status_code);
         context.add_diag(diag!(
             Attributes::InvalidValue,
-            (*attr_loc, bad_value),
-            (value_loc, no_code)
+            (value_loc, bad_value),
+            (*failure_loc, no_code)
         ));
         return None;
     };
@@ -375,7 +405,7 @@ fn expected_failure_major_status(
             TestingAttribute::ERROR_LOCATION,
             TestingAttribute::MAJOR_STATUS_NAME
         );
-        context.add_diag(diag!(Attributes::InvalidUsage, (*attr_loc, msg)));
+        context.add_diag(diag!(Attributes::InvalidUsage, (*failure_loc, msg)));
         return None;
     };
     let location = context.name_access_chain_to_module_ident(location)?;
@@ -388,7 +418,8 @@ fn expected_failure_major_status(
 
 fn expected_failure_abort_code(
     context: &mut Context,
-    attr_loc: &Loc,
+    _attr_loc: &Loc,
+    failure_loc: &Loc,
     value: P::AttributeValue,
     minor_status: Option<P::AttributeValue>,
     location: Option<P::NameAccessChain>,
@@ -402,27 +433,28 @@ fn expected_failure_abort_code(
         ));
     }
 
-    let code_loc = value.loc.clone();
     let minor_code = attribute_value_to_minor_code(context, Some(value))?;
+    let minor_code_loc = minor_code.loc;
 
-    match minor_code {
-        value @ A::MinorCode::Value(code) => {
+    match minor_code.value {
+        A::MinorCode_::Value(ref code) => {
+            let code = *code;
             let location = location.and_then(|loc| context.name_access_chain_to_module_ident(loc));
             if let Some(location) = location {
                 let attr = A::ExpectedFailure::ExpectedWithError {
                     status_code: StatusCode::ABORTED,
-                    minor_code: Some(value),
+                    minor_code: Some(minor_code),
                     location,
                 };
                 Some(attr)
             } else {
                 context.add_diag(diag!(
                     Attributes::ValueWarning,
-                    (*attr_loc, BAD_ABORT_VALUE_WARNING),
+                    (*failure_loc, BAD_ABORT_VALUE_WARNING),
                     (
-                        code_loc,
+                        minor_code_loc,
                         format!(
-                            "Replace value with constant from expected module or add '{}=...'",
+                            "Replace value with a constant from expected module or add '{}=...'",
                             TestingAttribute::ERROR_LOCATION
                         )
                     )
@@ -430,16 +462,16 @@ fn expected_failure_abort_code(
                 Some(A::ExpectedFailure::ExpectedWithCodeDEPRECATED(code))
             }
         }
-        constant @ A::MinorCode::Constant(_, _) => {
+        A::MinorCode_::Constant(_, _) => {
             let location = location.and_then(|loc| context.name_access_chain_to_module_ident(loc));
             let location = if let Some(location) = location {
                 location
             } else {
-                minor_code_location(&constant).unwrap()
+                minor_code_location(&minor_code).unwrap()
             };
             Some(A::ExpectedFailure::ExpectedWithError {
                 status_code: StatusCode::ABORTED,
-                minor_code: Some(constant),
+                minor_code: Some(minor_code),
                 location,
             })
         }
@@ -473,34 +505,36 @@ fn attribute_value_to_minor_code(
     context: &mut Context,
     value: Option<P::AttributeValue>,
 ) -> Option<A::MinorCode> {
+    const ERR_MSG: &'static str = "Invalid value in attribute assignment";
+    const EXPECTED_MSG: &'static str = "Expected a u64 literal or named constant";
     let Some(sp!(value_loc, value)) = value else {
         return None;
     };
     match value {
         P::AttributeValue_::Value(value) => {
+            let loc = value.loc;
             let value = context.value(value)?;
             match value.value {
-                E::Value_::U64(n) => Some(A::MinorCode::Value(n)),
+                E::Value_::U64(n) => Some(sp(loc, A::MinorCode_::Value(n))),
                 E::Value_::InferredNum(ref n) => match u64::try_from(n.clone()) {
-                    Ok(num) => Some(A::MinorCode::Value(num)),
+                    Ok(num) => Some(sp(loc, A::MinorCode_::Value(num))),
                     Err(_) => {
-                        context.add_diag(diag!(
-                            Attributes::InvalidValue,
-                            (value.loc, "Expect a u64 or named constant")
-                        ));
+                        let mut diag = diag!(Attributes::InvalidValue, (value.loc, ERR_MSG));
+                        diag.add_note(EXPECTED_MSG);
+                        context.add_diag(diag);
                         None
                     }
                 },
                 _ => {
-                    context.add_diag(diag!(
-                        Attributes::InvalidValue,
-                        (value.loc, "Expected a u64 or named constant")
-                    ));
+                    let mut diag = diag!(Attributes::InvalidValue, (value.loc, ERR_MSG));
+                    diag.add_note(EXPECTED_MSG);
+                    context.add_diag(diag);
                     None
                 }
             }
         }
         P::AttributeValue_::ModuleAccess(chain) => {
+            let chain_loc = chain.loc;
             let crate::expansion::path_expander::ModuleAccessResult {
                 access,
                 ptys_opt,
@@ -523,17 +557,13 @@ fn attribute_value_to_minor_code(
             );
             match access.value {
                 E::ModuleAccess_::Name(_) | E::ModuleAccess_::Variant(_, _) => {
-                    context.add_diag(diag!(
-                        Attributes::InvalidValue,
-                        (
-                            access.loc,
-                            "Expected a named constant, not a name or variant"
-                        )
-                    ));
+                    let mut diag = diag!(Attributes::InvalidValue, (chain_loc, ERR_MSG));
+                    diag.add_note(EXPECTED_MSG);
+                    context.add_diag(diag);
                     None
                 }
                 E::ModuleAccess_::ModuleAccess(mident, name) => {
-                    Some(A::MinorCode::Constant(mident, name))
+                    Some(sp(chain_loc, A::MinorCode_::Constant(mident, name)))
                 }
             }
         }
@@ -541,8 +571,8 @@ fn attribute_value_to_minor_code(
 }
 
 fn minor_code_location(minor_code: &A::MinorCode) -> Option<ModuleIdent> {
-    match minor_code {
-        A::MinorCode::Value(_) => None,
-        A::MinorCode::Constant(mident, _) => Some(mident.clone()),
+    match &minor_code.value {
+        A::MinorCode_::Value(_) => None,
+        A::MinorCode_::Constant(mident, _) => Some(mident.clone()),
     }
 }

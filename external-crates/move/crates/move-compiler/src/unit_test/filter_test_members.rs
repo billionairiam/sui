@@ -69,27 +69,18 @@ impl FilterContext for Context<'_> {
     //   not set; or
     // * If it is a library and is annotated as #[test]
     fn should_remove_by_attributes(&mut self, attrs: &[P::Attributes]) -> bool {
-        let flattened_attrs: Vec<_> = attrs.iter().flat_map(test_attributes).collect();
+        let flattened_attrs: Vec<_> = attrs.iter().flat_map(test_attribute_kinds).collect();
         let is_test_only = flattened_attrs.iter().any(|attr| {
             matches!(
                 attr.1,
-                AttributeKind_::Test
-                    | AttributeKind_::TestOnly
-                    | AttributeKind_::RandTest
-                    | AttributeKind_::ExpectedFailure
+                AttributeKind_::Test | AttributeKind_::TestOnly | AttributeKind_::RandTest
             )
         });
         is_test_only && !self.env.flags().keep_testing_functions()
             || (!self.is_source_def
-                && flattened_attrs.iter().any(|attr| {
-                    matches!(
-                        attr.1,
-                        AttributeKind_::Test
-                            | AttributeKind_::TestOnly
-                            | AttributeKind_::RandTest
-                            | AttributeKind_::ExpectedFailure
-                    )
-                }))
+                && flattened_attrs
+                    .iter()
+                    .any(|attr| matches!(attr.1, AttributeKind_::Test | AttributeKind_::RandTest)))
     }
 }
 
@@ -148,7 +139,6 @@ fn check_has_unit_test_module(
 ) -> bool {
     let has_unit_test_module = has_unit_test_module(prog)
         || pre_compiled_lib.is_some_and(|p| has_unit_test_module(&p.parser));
-
     if !has_unit_test_module && compilation_env.flags().is_testing() {
         if let Some(P::PackageDefinition { def, .. }) = prog
             .source_definitions
@@ -244,7 +234,7 @@ fn create_test_poison(mloc: Loc) -> P::ModuleMember {
     })
 }
 
-fn test_attributes(attrs: &P::Attributes) -> Vec<(Loc, known_attributes::AttributeKind_)> {
+fn test_attribute_kinds(attrs: &P::Attributes) -> Vec<(Loc, known_attributes::AttributeKind_)> {
     attrs
         .value
         .iter()

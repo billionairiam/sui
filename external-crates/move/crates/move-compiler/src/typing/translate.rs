@@ -22,7 +22,7 @@ use crate::{
     shared::{
         ide::{DotAutocompleteInfo, IDEAnnotation, MacroCallInfo},
         known_attributes::{
-            AttributeKind_, ErrorAttribute, KnownAttribute, MinorCode, SyntaxAttribute,
+            AttributeKind_, ErrorAttribute, KnownAttribute, MinorCode_, SyntaxAttribute,
         },
         process_binops,
         program_info::{ConstantInfo, DatatypeKind, NamingProgramInfo, TypingProgramInfo},
@@ -4830,7 +4830,7 @@ pub fn collect_known_attribute_module_members(
             {
                 match expected_failure {
                     known_attributes::ExpectedFailure::ExpectedWithError { minor_code, .. } => {
-                        if let Some(MinorCode::Constant(mident, name)) = minor_code {
+                        if let Some(sp!(_, MinorCode_::Constant(mident, name))) = minor_code {
                             set.insert((*mident, *name));
                         }
                     }
