@@ -271,7 +271,7 @@ fn lower_expected_failure(
         )));
         return None;
     };
-    match &failure {
+    match &**failure {
         EF::Expected => Some(ExpectedFailure::Expected),
         EF::ExpectedWithCodeDEPRECATED(code) => Some(ExpectedFailure::ExpectedWithCodeDEPRECATED(
             MoveErrorType::Code(*code),
@@ -284,9 +284,8 @@ fn lower_expected_failure(
             let sub_status_code = minor_code
                 .as_ref()
                 .and_then(|value| convert_minor_code_to_sub_status_code(context, value));
-            let location = move_binary_format::errors::Location::Module(convert_module_id(
-                context, &location,
-            )?);
+            let location =
+                move_binary_format::errors::Location::Module(convert_module_id(context, location)?);
             Some(ExpectedFailure::ExpectedWithError(ExpectedMoveError(
                 *status_code,
                 sub_status_code,

@@ -74,7 +74,7 @@ impl<'env, 'lexer, 'input> Context<'env, 'lexer, 'input> {
     }
 
     pub fn env(&self) -> &CompilationEnv {
-        &self.env
+        self.env
     }
 
     pub fn add_diag(&self, diag: Diagnostic) {

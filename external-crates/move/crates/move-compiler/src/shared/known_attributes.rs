@@ -102,12 +102,13 @@ pub enum TestingAttribute {
     // Can be called by other testing code, and included in compilation in test mode
     TestOnly,
     // This test is expected to fail
-    ExpectedFailure(ExpectedFailure),
+    ExpectedFailure(Box<ExpectedFailure>),
     // This is a test that uses randomly-generated arguments
     RandTest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum ExpectedFailure {
     Expected,
     ExpectedWithCodeDEPRECATED(u64),
@@ -119,6 +120,7 @@ pub enum ExpectedFailure {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum MinorCode_ {
     Value(u64),
     Constant(ModuleIdent, Name),
@@ -718,7 +720,7 @@ impl AstDebug for BytecodeInstructionAttribute {
 impl AstDebug for DefinesPrimitiveAttribute {
     fn ast_debug(&self, w: &mut AstWriter) {
         w.write("defines_primitive(");
-        w.write(&self.name.to_string());
+        w.write(self.name.to_string());
         w.write(")");
     }
 }
@@ -728,7 +730,7 @@ impl AstDebug for DeprecationAttribute {
         w.write("deprecated");
         if let Some(ref note) = self.note {
             w.write("(note= ");
-            w.write(&format!("{}", std::str::from_utf8(note).unwrap()));
+            w.write(std::str::from_utf8(note).unwrap());
             w.write(")");
         }
     }
@@ -748,13 +750,13 @@ impl AstDebug for DiagnosticAttribute {
                     first = false;
                     match prefix {
                         Some(pref) => {
-                            w.write(&pref.to_string());
+                            w.write(pref.to_string());
                             w.write("(");
-                            w.write(&name.to_string());
+                            w.write(name.to_string());
                             w.write(")");
                         }
                         None => {
-                            w.write(&name.to_string());
+                            w.write(name.to_string());
                         }
                     }
                 }
@@ -765,7 +767,7 @@ impl AstDebug for DiagnosticAttribute {
                         w.write(", ");
                     }
                     first = false;
-                    w.write(&name.to_string());
+                    w.write(name.to_string());
                 }
             }
         };
@@ -779,7 +781,7 @@ impl AstDebug for ErrorAttribute {
         w.write("error");
         if let Some(code) = self.code {
             w.write("(code= ");
-            w.write(&code.to_string());
+            w.write(code.to_string());
             w.write(")");
         }
     }
@@ -795,7 +797,7 @@ impl AstDebug for ExternalAttribute {
 impl AstDebug for SyntaxAttribute {
     fn ast_debug(&self, w: &mut AstWriter) {
         w.write("syntax(");
-        w.write(&self.kind.to_string());
+        w.write(self.kind.to_string());
         w.write(")");
     }
 }

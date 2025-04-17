@@ -150,7 +150,7 @@ fn parse_defines_prim(context: &mut Context, attribute: ParsedAttribute) -> Vec<
 
 fn parse_deprecated(context: &mut Context, attribute: ParsedAttribute) -> Vec<Attribute> {
     use ParsedAttribute_ as PA;
-    const DEPRECATED_NOTE: &'static str = "Deprecation attributes must be written as '#[deprecated]' or '#[deprecated(note = b\"message\")]'";
+    const DEPRECATED_NOTE: &str = "Deprecation attributes must be written as '#[deprecated]' or '#[deprecated(note = b\"message\")]'";
     let sp!(_, attr) = attribute;
     match attr {
         PA::Name(sp!(loc, _)) => {
@@ -231,8 +231,8 @@ fn parse_allow(context: &mut Context, attribute: ParsedAttribute) -> Vec<Attribu
                         let msg = format!("Duplicate lint '{}'", name);
                         context.add_diag(diag!(
                             Declarations::InvalidAttribute,
-                            (name.loc.clone(), msg),
-                            (prev.loc.clone(), "Lint first appears here"),
+                            (name.loc, msg),
+                            (prev.loc, "Lint first appears here"),
                         ));
                     } else {
                         let _ = allow_set.insert(pair);
@@ -245,7 +245,7 @@ fn parse_allow(context: &mut Context, attribute: ParsedAttribute) -> Vec<Attribu
                     &attr,
                     "a stand alone warning filter identifier, e.g. '#[allow(unused)]'",
                 );
-                context.add_diag(diag!(Declarations::InvalidAttribute, (loc.clone(), msg)));
+                context.add_diag(diag!(Declarations::InvalidAttribute, (loc, msg)));
                 vec![]
             }
         }
@@ -263,8 +263,8 @@ fn parse_allow(context: &mut Context, attribute: ParsedAttribute) -> Vec<Attribu
                         let msg = format!("Duplicate lint '{}'", name);
                         context.add_diag(diag!(
                             Declarations::InvalidAttribute,
-                            (name.loc.clone(), msg),
-                            (prev.loc.clone(), "Lint first appears here"),
+                            (name.loc, msg),
+                            (prev.loc, "Lint first appears here"),
                         ));
                     } else {
                         let _ = allow_set.insert(pair);
@@ -503,7 +503,7 @@ fn parse_expected_failure(context: &mut Context, attribute: ParsedAttribute) -> 
             return vec![sp(
                 outer_loc,
                 Attribute_::ExpectedFailure {
-                    failure_kind: sp(name_loc, ExpectedFailureKind_::Empty),
+                    failure_kind: Box::new(sp(name_loc, ExpectedFailureKind_::Empty)),
                     minor_status: None,
                     location: None,
                 },
@@ -584,12 +584,12 @@ fn parse_expected_failure(context: &mut Context, attribute: ParsedAttribute) -> 
                         let msg = format!("Duplicate assignment for field '{}'.", key);
                         context.add_diag(diag!(
                             Declarations::InvalidAttribute,
-                            (arg_loc.clone(), msg),
+                            (arg_loc, msg),
                             (prev.loc, "Previously defined here"),
                         ));
                         continue;
                     } else {
-                        let _ = assigned_fields.insert(key.clone());
+                        let _ = assigned_fields.insert(key);
                     }
                     let err_msg =
                         |expected| format!("Field '{}' must be a {}", key.value, expected);
@@ -608,7 +608,7 @@ fn parse_expected_failure(context: &mut Context, attribute: ParsedAttribute) -> 
                             AttributeValue_::ModuleAccess(_) => {
                                 context.add_diag(diag!(
                                     Declarations::InvalidAttribute,
-                                    (arg_loc.clone(), err_msg("literal value"))
+                                    (arg_loc, err_msg("literal value"))
                                 ));
                             }
                         },
@@ -618,7 +618,7 @@ fn parse_expected_failure(context: &mut Context, attribute: ParsedAttribute) -> 
                             AttributeValue_::Value(_) => {
                                 context.add_diag(diag!(
                                     Declarations::InvalidAttribute,
-                                    (arg_loc.clone(), err_msg("module name"))
+                                    (arg_loc, err_msg("module name"))
                                 ));
                                 // Bail early
                                 return vec![];
@@ -637,10 +637,7 @@ fn parse_expected_failure(context: &mut Context, attribute: ParsedAttribute) -> 
                         KA::TestingAttribute::ABORT_CODE_NAME
                     ),
                 );
-                context.add_diag(diag!(
-                    Declarations::InvalidAttribute,
-                    (arg_loc.clone(), msg)
-                ));
+                context.add_diag(diag!(Declarations::InvalidAttribute, (arg_loc, msg)));
             }
         }
     }
@@ -648,7 +645,7 @@ fn parse_expected_failure(context: &mut Context, attribute: ParsedAttribute) -> 
         let expected_failure_attr = sp(
             outer_loc,
             Attribute_::ExpectedFailure {
-                failure_kind,
+                failure_kind: Box::new(failure_kind),
                 minor_status,
                 location: location_field,
             },
@@ -718,7 +715,7 @@ fn report_duplicate_fields(context: &mut Context, attr: &ParsedAttribute) {
                 PA::Assigned(n, _) => n.value.to_string(),
                 PA::Parameterized(n, _) => n.value.to_string(),
             };
-            let this_loc = sub.loc.clone();
+            let this_loc = sub.loc;
             if let Some(prev_loc) = seen.get(&name_str) {
                 // Duplicate found: report it.
                 let msg = format!(
@@ -728,7 +725,7 @@ fn report_duplicate_fields(context: &mut Context, attr: &ParsedAttribute) {
                 context.add_diag(diag!(
                     Declarations::DuplicateItem,
                     (this_loc, msg),
-                    (prev_loc.clone(), "Attribute previously given here")
+                    (*prev_loc, "Attribute previously given here")
                 ));
             } else {
                 seen.insert(name_str, this_loc);
@@ -752,7 +749,7 @@ fn expect_name_attr(context: &mut Context, attr: ParsedAttribute) -> Option<Name
         PA::Assigned(name, _) | PA::Parameterized(name, _) => {
             let msg =
                 make_attribute_format_error(&attr, &format!("name only, as '{}'", name.clone()));
-            context.add_diag(diag!(Declarations::InvalidAttribute, (loc.clone(), msg)));
+            context.add_diag(diag!(Declarations::InvalidAttribute, (loc, msg)));
             None
         }
     }

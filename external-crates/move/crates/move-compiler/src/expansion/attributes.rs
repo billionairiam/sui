@@ -1,8 +1,6 @@
 // Copyright (c) The Move Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::u8;
-
 use crate::{
     diag,
     expansion::{
@@ -37,7 +35,7 @@ pub fn expand_attributes(
             .collect::<Vec<_>>();
         for attr in attrs {
             if !validate_position(context, &attr_position, &attr)
-                || !no_conflicts(context, &attr_position, &mut attr_map, &attr)
+                || !no_conflicts(context, &attr_position, &attr_map, &attr)
                 || !insert_attribute(context, &mut attr_map, attr)
             {
                 continue;
@@ -233,7 +231,7 @@ fn attribute(
         } => {
             let failure =
                 expected_failure_attribute(context, &loc, failure_kind, minor_status, location)?;
-            KA::Testing(TestingAttribute::ExpectedFailure(failure))
+            KA::Testing(TestingAttribute::ExpectedFailure(Box::new(failure)))
         }
         PA::RandomTest => KA::Testing(A::TestingAttribute::RandTest),
     };
@@ -286,10 +284,11 @@ fn ext_attribue(
 fn expected_failure_attribute(
     context: &mut Context,
     attr_loc: &Loc,
-    sp!(failure_loc, failure_kind): P::ExpectedFailureKind,
+    failure_kind: Box<P::ExpectedFailureKind>,
     minor_status: Option<P::AttributeValue>,
     location: Option<P::NameAccessChain>,
 ) -> Option<A::ExpectedFailure> {
+    let sp!(failure_loc, failure_kind) = *failure_kind;
     match failure_kind {
         P::ExpectedFailureKind_::Empty => Some(A::ExpectedFailure::Expected),
         P::ExpectedFailureKind_::Name(name) => expected_failure_named(
@@ -481,7 +480,7 @@ fn expected_failure_abort_code(
 fn value_into_u64(context: &mut Context, value: E::Value) -> Option<u64> {
     match value.value {
         E::Value_::U64(n) => Some(n),
-        E::Value_::InferredNum(ref n) => match u64::try_from(n.clone()) {
+        E::Value_::InferredNum(ref n) => match u64::try_from(*n) {
             Ok(num) => Some(num),
             Err(_) => {
                 context.add_diag(diag!(
@@ -505,8 +504,8 @@ fn attribute_value_to_minor_code(
     context: &mut Context,
     value: Option<P::AttributeValue>,
 ) -> Option<A::MinorCode> {
-    const ERR_MSG: &'static str = "Invalid value in attribute assignment";
-    const EXPECTED_MSG: &'static str = "Expected a u64 literal or named constant";
+    const ERR_MSG: &str = "Invalid value in attribute assignment";
+    const EXPECTED_MSG: &str = "Expected a u64 literal or named constant";
     let Some(sp!(value_loc, value)) = value else {
         return None;
     };
@@ -516,7 +515,7 @@ fn attribute_value_to_minor_code(
             let value = context.value(value)?;
             match value.value {
                 E::Value_::U64(n) => Some(sp(loc, A::MinorCode_::Value(n))),
-                E::Value_::InferredNum(ref n) => match u64::try_from(n.clone()) {
+                E::Value_::InferredNum(ref n) => match u64::try_from(*n) {
                     Ok(num) => Some(sp(loc, A::MinorCode_::Value(num))),
                     Err(_) => {
                         let mut diag = diag!(Attributes::InvalidValue, (value.loc, ERR_MSG));
@@ -573,6 +572,6 @@ fn attribute_value_to_minor_code(
 fn minor_code_location(minor_code: &A::MinorCode) -> Option<ModuleIdent> {
     match &minor_code.value {
         A::MinorCode_::Value(_) => None,
-        A::MinorCode_::Constant(mident, _) => Some(mident.clone()),
+        A::MinorCode_::Constant(mident, _) => Some(*mident),
     }
 }

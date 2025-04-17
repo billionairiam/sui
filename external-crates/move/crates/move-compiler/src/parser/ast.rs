@@ -165,6 +165,7 @@ pub struct UseDecl {
 //**************************************************************************************************
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum AttributeValue_ {
     Value(Value),
     ModuleAccess(NameAccessChain),
@@ -192,6 +193,7 @@ pub enum ExpectedFailureKind_ {
 pub type ExpectedFailureKind = Spanned<ExpectedFailureKind_>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Attribute_ {
     BytecodeInstruction,
     DefinesPrimitive(Name),
@@ -219,7 +221,7 @@ pub enum Attribute_ {
     Test,
     TestOnly,
     ExpectedFailure {
-        failure_kind: ExpectedFailureKind,
+        failure_kind: Box<ExpectedFailureKind>,
         minor_status: Option<AttributeValue>,
         location: Option<NameAccessChain>,
     },
