@@ -25,7 +25,7 @@ use std::time::Instant;
 use sui_types::base_types::{ObjectID, TransactionDigest};
 use sui_types::digests::CheckpointDigest;
 use sui_types::full_checkpoint_content::CheckpointData;
-use sui_types::messages_checkpoint::CheckpointSequenceNumber;
+use sui_types::messages_checkpoint::{CheckpointSequenceNumber, CheckpointSummary};
 use sui_types::object::Object;
 use sui_types::storage::ObjectKey;
 use tonic::body::BoxBody;
@@ -33,6 +33,9 @@ use tonic::codegen::Service;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 use tonic::Streaming;
 use tracing::error;
+
+use super::proto::bigtable::v2::row_filter::Filter;
+use super::proto::bigtable::v2::RowFilter;
 
 const OBJECTS_TABLE: &str = "objects";
 const TRANSACTIONS_TABLE: &str = "transactions";
@@ -195,6 +198,29 @@ impl KeyValueStoreReader for BigTableClient {
             })
         }
         Ok(result)
+    }
+
+    async fn get_checkpoint_summaries(
+        &mut self,
+        sequence_numbers: &[CheckpointSequenceNumber],
+    ) -> Result<Vec<CheckpointSummary>> {
+        let keys = sequence_numbers
+            .iter()
+            .map(|sq| sq.to_be_bytes().to_vec())
+            .collect();
+        let mut summaries = vec![];
+        for row in self
+            .multi_get_column(CHECKPOINTS_TABLE, CHECKPOINT_SUMMARY_COLUMN_QUALIFIER, keys)
+            .await?
+        {
+            for (column, value) in row {
+                match std::str::from_utf8(&column)? {
+                    CHECKPOINT_SUMMARY_COLUMN_QUALIFIER => summaries.push(bcs::from_bytes(&value)?),
+                    _ => error!("unexpected column {:?} in checkpoints table", column),
+                }
+            }
+        }
+        Ok(summaries)
     }
 
     async fn get_checkpoints(
@@ -462,52 +488,116 @@ impl BigTableClient {
     ) -> Result<Vec<Vec<(Bytes, Bytes)>>> {
         let start_time = Instant::now();
         let num_keys_requested = keys.len();
-        let result = self.multi_get_internal(table_name, keys).await;
+        let result = self.multi_get_internal(table_name, keys, None).await;
         let elapsed_ms = start_time.elapsed().as_millis() as f64;
-        let labels = [&self.client_name, table_name];
-        match &self.metrics {
-            None => result,
-            Some(metrics) => match result {
-                Err(e) => {
-                    metrics.kv_get_errors.with_label_values(&labels).inc();
-                    Err(e)
-                }
-                Ok(result) => {
-                    metrics
-                        .kv_get_batch_size
-                        .with_label_values(&labels)
-                        .observe(num_keys_requested as f64);
-                    if num_keys_requested > result.len() {
-                        metrics
-                            .kv_get_not_found
-                            .with_label_values(&labels)
-                            .inc_by((num_keys_requested - result.len()) as u64);
-                    }
-                    metrics
-                        .kv_get_success
-                        .with_label_values(&labels)
-                        .inc_by(result.len() as u64);
 
-                    metrics
-                        .kv_get_latency_ms
-                        .with_label_values(&labels)
-                        .observe(elapsed_ms);
-                    if num_keys_requested > 0 {
-                        metrics
-                            .kv_get_latency_ms_per_key
-                            .with_label_values(&labels)
-                            .observe(elapsed_ms / num_keys_requested as f64);
-                    }
-                    Ok(result)
-                }
-            },
+        let Some(metrics) = &self.metrics else {
+            return result;
+        };
+
+        let labels = [&self.client_name, table_name];
+        let Ok(rows) = &result else {
+            metrics.kv_get_errors.with_label_values(&labels).inc();
+            return result;
+        };
+
+        metrics
+            .kv_get_batch_size
+            .with_label_values(&labels)
+            .observe(num_keys_requested as f64);
+
+        if num_keys_requested > rows.len() {
+            metrics
+                .kv_get_not_found
+                .with_label_values(&labels)
+                .inc_by((num_keys_requested - rows.len()) as u64);
         }
+        metrics
+            .kv_get_success
+            .with_label_values(&labels)
+            .inc_by(rows.len() as u64);
+
+        metrics
+            .kv_get_latency_ms
+            .with_label_values(&labels)
+            .observe(elapsed_ms);
+
+        if num_keys_requested > 0 {
+            metrics
+                .kv_get_latency_ms_per_key
+                .with_label_values(&labels)
+                .observe(elapsed_ms / num_keys_requested as f64);
+        }
+
+        result
+    }
+
+    pub async fn multi_get_column(
+        &mut self,
+        table_name: &str,
+        column_qualifier: &str,
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<Vec<(Bytes, Bytes)>>> {
+        let filter = RowFilter {
+            filter: Some(Filter::ColumnQualifierRegexFilter(
+                format!("^{column_qualifier}$").into_bytes(),
+            )),
+        };
+
+        let start_time = Instant::now();
+        let num_keys_requested = keys.len();
+        let result = self
+            .multi_get_internal(table_name, keys, Some(filter))
+            .await;
+        let elapsed_ms = start_time.elapsed().as_millis() as f64;
+
+        let Some(metrics) = &self.metrics else {
+            return result;
+        };
+
+        let column_label = format!("{table_name}_{column_qualifier}");
+        let labels = [&self.client_name, column_label.as_str()];
+        let Ok(rows) = &result else {
+            metrics.kv_get_errors.with_label_values(&labels).inc();
+            return result;
+        };
+
+        metrics
+            .kv_get_batch_size
+            .with_label_values(&labels)
+            .observe(num_keys_requested as f64);
+
+        if num_keys_requested > rows.len() {
+            metrics
+                .kv_get_not_found
+                .with_label_values(&labels)
+                .inc_by((num_keys_requested - rows.len()) as u64);
+        }
+        metrics
+            .kv_get_success
+            .with_label_values(&labels)
+            .inc_by(rows.len() as u64);
+
+        metrics
+            .kv_get_latency_ms
+            .with_label_values(&labels)
+            .observe(elapsed_ms);
+
+        if num_keys_requested > 0 {
+            metrics
+                .kv_get_latency_ms_per_key
+                .with_label_values(&labels)
+                .observe(elapsed_ms / num_keys_requested as f64);
+        }
+
+        result
     }
 
     pub async fn multi_get_internal(
         &mut self,
         table_name: &str,
         keys: Vec<Vec<u8>>,
+        filter: Option<RowFilter>,
     ) -> Result<Vec<Vec<(Bytes, Bytes)>>> {
         let request = ReadRowsRequest {
             table_name: format!("{}{}", self.table_prefix, table_name),
@@ -516,6 +606,7 @@ impl BigTableClient {
                 row_keys: keys,
                 row_ranges: vec![],
             }),
+            filter,
             ..ReadRowsRequest::default()
         };
         let mut result = vec![];

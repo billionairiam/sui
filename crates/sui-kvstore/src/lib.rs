@@ -25,6 +25,10 @@ pub trait KeyValueStoreReader {
         &mut self,
         transactions: &[TransactionDigest],
     ) -> Result<Vec<TransactionData>>;
+    async fn get_checkpoint_summaries(
+        &mut self,
+        sequence_numbers: &[CheckpointSequenceNumber],
+    ) -> Result<Vec<CheckpointSummary>>;
     async fn get_checkpoints(
         &mut self,
         sequence_numbers: &[CheckpointSequenceNumber],
