@@ -156,7 +156,7 @@ impl KeyValueStoreReader for BigTableClient {
     async fn get_objects(&mut self, object_keys: &[ObjectKey]) -> Result<Vec<Object>> {
         let keys: Result<_, _> = object_keys.iter().map(Self::raw_object_key).collect();
         let mut objects = vec![];
-        for row in self.multi_get(OBJECTS_TABLE, keys?).await? {
+        for row in self.multi_get(OBJECTS_TABLE, keys?, None).await? {
             for (_, value) in row {
                 objects.push(bcs::from_bytes(&value)?);
             }
@@ -170,7 +170,7 @@ impl KeyValueStoreReader for BigTableClient {
     ) -> Result<Vec<TransactionData>> {
         let keys = transactions.iter().map(|tx| tx.inner().to_vec()).collect();
         let mut result = vec![];
-        for row in self.multi_get(TRANSACTIONS_TABLE, keys).await? {
+        for row in self.multi_get(TRANSACTIONS_TABLE, keys, None).await? {
             let mut transaction = None;
             let mut effects = None;
             let mut events = None;
@@ -200,29 +200,6 @@ impl KeyValueStoreReader for BigTableClient {
         Ok(result)
     }
 
-    async fn get_checkpoint_summaries(
-        &mut self,
-        sequence_numbers: &[CheckpointSequenceNumber],
-    ) -> Result<Vec<CheckpointSummary>> {
-        let keys = sequence_numbers
-            .iter()
-            .map(|sq| sq.to_be_bytes().to_vec())
-            .collect();
-        let mut summaries = vec![];
-        for row in self
-            .multi_get_column(CHECKPOINTS_TABLE, CHECKPOINT_SUMMARY_COLUMN_QUALIFIER, keys)
-            .await?
-        {
-            for (column, value) in row {
-                match std::str::from_utf8(&column)? {
-                    CHECKPOINT_SUMMARY_COLUMN_QUALIFIER => summaries.push(bcs::from_bytes(&value)?),
-                    _ => error!("unexpected column {:?} in checkpoints table", column),
-                }
-            }
-        }
-        Ok(summaries)
-    }
-
     async fn get_checkpoints(
         &mut self,
         sequence_numbers: &[CheckpointSequenceNumber],
@@ -232,7 +209,7 @@ impl KeyValueStoreReader for BigTableClient {
             .map(|sq| sq.to_be_bytes().to_vec())
             .collect();
         let mut checkpoints = vec![];
-        for row in self.multi_get(CHECKPOINTS_TABLE, keys).await? {
+        for row in self.multi_get(CHECKPOINTS_TABLE, keys, None).await? {
             let mut summary = None;
             let mut contents = None;
             let mut signatures = None;
@@ -264,7 +241,7 @@ impl KeyValueStoreReader for BigTableClient {
     ) -> Result<Option<Checkpoint>> {
         let key = digest.inner().to_vec();
         let mut response = self
-            .multi_get(CHECKPOINTS_BY_DIGEST_TABLE, vec![key])
+            .multi_get(CHECKPOINTS_BY_DIGEST_TABLE, vec![key], None)
             .await?;
         if let Some(row) = response.pop() {
             if let Some((_, value)) = row.into_iter().next() {
@@ -287,6 +264,40 @@ impl KeyValueStoreReader for BigTableClient {
             Some((key_bytes, _)) => Ok(u64::from_be_bytes(key_bytes.as_slice().try_into()?)),
             None => Ok(0),
         }
+    }
+
+    async fn get_latest_checkpoint_summary(&mut self) -> Result<Option<CheckpointSummary>> {
+        let sequence_number = self.get_latest_checkpoint().await?;
+        if sequence_number == 0 {
+            return Ok(None);
+        }
+
+        // Fetch just the summary for the latest checkpoint sequence number.
+        let mut response = self
+            .multi_get(
+                CHECKPOINTS_TABLE,
+                vec![(sequence_number - 1).to_be_bytes().to_vec()],
+                Some(RowFilter {
+                    filter: Some(Filter::ColumnQualifierRegexFilter(
+                        CHECKPOINT_SUMMARY_COLUMN_QUALIFIER.into(),
+                    )),
+                }),
+            )
+            .await?;
+
+        let Some(row) = response.pop() else {
+            return Ok(None);
+        };
+
+        let mut summary: Option<CheckpointSummary> = None;
+        for (column, value) in row {
+            match std::str::from_utf8(&column)? {
+                CHECKPOINT_SUMMARY_COLUMN_QUALIFIER => summary = Some(bcs::from_bytes(&value)?),
+                _ => error!("unexpected column {:?} in checkpoints table", column),
+            }
+        }
+
+        Ok(summary)
     }
 
     async fn get_latest_object(&mut self, object_id: &ObjectID) -> Result<Option<Object>> {
@@ -485,10 +496,11 @@ impl BigTableClient {
         &mut self,
         table_name: &str,
         keys: Vec<Vec<u8>>,
+        filter: Option<RowFilter>,
     ) -> Result<Vec<Vec<(Bytes, Bytes)>>> {
         let start_time = Instant::now();
         let num_keys_requested = keys.len();
-        let result = self.multi_get_internal(table_name, keys, None).await;
+        let result = self.multi_get_internal(table_name, keys, filter).await;
         let elapsed_ms = start_time.elapsed().as_millis() as f64;
 
         let Some(metrics) = &self.metrics else {
@@ -512,67 +524,7 @@ impl BigTableClient {
                 .with_label_values(&labels)
                 .inc_by((num_keys_requested - rows.len()) as u64);
         }
-        metrics
-            .kv_get_success
-            .with_label_values(&labels)
-            .inc_by(rows.len() as u64);
 
-        metrics
-            .kv_get_latency_ms
-            .with_label_values(&labels)
-            .observe(elapsed_ms);
-
-        if num_keys_requested > 0 {
-            metrics
-                .kv_get_latency_ms_per_key
-                .with_label_values(&labels)
-                .observe(elapsed_ms / num_keys_requested as f64);
-        }
-
-        result
-    }
-
-    pub async fn multi_get_column(
-        &mut self,
-        table_name: &str,
-        column_qualifier: &str,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<Vec<(Bytes, Bytes)>>> {
-        let filter = RowFilter {
-            filter: Some(Filter::ColumnQualifierRegexFilter(
-                format!("^{column_qualifier}$").into_bytes(),
-            )),
-        };
-
-        let start_time = Instant::now();
-        let num_keys_requested = keys.len();
-        let result = self
-            .multi_get_internal(table_name, keys, Some(filter))
-            .await;
-        let elapsed_ms = start_time.elapsed().as_millis() as f64;
-
-        let Some(metrics) = &self.metrics else {
-            return result;
-        };
-
-        let column_label = format!("{table_name}_{column_qualifier}");
-        let labels = [&self.client_name, column_label.as_str()];
-        let Ok(rows) = &result else {
-            metrics.kv_get_errors.with_label_values(&labels).inc();
-            return result;
-        };
-
-        metrics
-            .kv_get_batch_size
-            .with_label_values(&labels)
-            .observe(num_keys_requested as f64);
-
-        if num_keys_requested > rows.len() {
-            metrics
-                .kv_get_not_found
-                .with_label_values(&labels)
-                .inc_by((num_keys_requested - rows.len()) as u64);
-        }
         metrics
             .kv_get_success
             .with_label_values(&labels)

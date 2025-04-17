@@ -25,10 +25,6 @@ pub trait KeyValueStoreReader {
         &mut self,
         transactions: &[TransactionDigest],
     ) -> Result<Vec<TransactionData>>;
-    async fn get_checkpoint_summaries(
-        &mut self,
-        sequence_numbers: &[CheckpointSequenceNumber],
-    ) -> Result<Vec<CheckpointSummary>>;
     async fn get_checkpoints(
         &mut self,
         sequence_numbers: &[CheckpointSequenceNumber],
@@ -38,6 +34,7 @@ pub trait KeyValueStoreReader {
         digest: CheckpointDigest,
     ) -> Result<Option<Checkpoint>>;
     async fn get_latest_checkpoint(&mut self) -> Result<CheckpointSequenceNumber>;
+    async fn get_latest_checkpoint_summary(&mut self) -> Result<Option<CheckpointSummary>>;
     async fn get_latest_object(&mut self, object_id: &ObjectID) -> Result<Option<Object>>;
 }
 

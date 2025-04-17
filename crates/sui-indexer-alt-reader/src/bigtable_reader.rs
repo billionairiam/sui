@@ -75,20 +75,12 @@ impl BigtableReader {
         DataLoader::new(self.clone(), tokio::spawn)
     }
 
-    /// Get the sequence number for the latest checkpoint known to Bigtable.
-    pub async fn checkpoint_watermark(&self) -> Result<u64, Error> {
-        measure("watermark", &(), self.0.clone().get_latest_checkpoint()).await
-    }
-
-    /// Multi-get checkpoint summaries by sequence number.
-    pub async fn checkpoint_summaries(
-        &self,
-        keys: &[CheckpointSequenceNumber],
-    ) -> Result<Vec<CheckpointSummary>, Error> {
+    /// Get the summary for the latest checkpoint known to Bigtable.
+    pub async fn checkpoint_watermark(&self) -> Result<Option<CheckpointSummary>, Error> {
         measure(
-            "checkpoint_summaries",
-            &keys,
-            self.0.clone().get_checkpoint_summaries(keys),
+            "watermark",
+            &(),
+            self.0.clone().get_latest_checkpoint_summary(),
         )
         .await
     }

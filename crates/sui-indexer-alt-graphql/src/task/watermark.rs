@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, ensure, Context as _};
+use anyhow::{ensure, Context as _};
 use chrono::{DateTime, Utc};
 use diesel::{
     sql_query,
@@ -240,26 +240,16 @@ impl Default for Watermarks {
 }
 
 async fn watermark_from_bigtable(bigtable_reader: &BigtableReader) -> anyhow::Result<WatermarkRow> {
-    let watermark = bigtable_reader
+    let summary = bigtable_reader
         .checkpoint_watermark()
         .await
-        .context("Failed to get checkpoint watermark")?;
-
-    // Bigtable's checkpoint watermark is exclusive, so we need to subtract 1 before fetching the
-    // summary.
-    let summary = bigtable_reader
-        .checkpoint_summaries(&[watermark.saturating_sub(1)])
-        .await
-        .context("Failed to get checkpoint summary")?;
-
-    let Some(summary) = summary.first() else {
-        bail!("Checkpoint summary not found for {watermark}");
-    };
+        .context("Failed to get checkpoint watermark")?
+        .context("Checkpoint watermark not found")?;
 
     Ok(WatermarkRow {
         pipeline: "bigtable".to_owned(),
         epoch_hi_inclusive: summary.epoch as i64,
-        checkpoint_hi_inclusive: watermark as i64,
+        checkpoint_hi_inclusive: summary.sequence_number as i64,
         tx_hi: summary.network_total_transactions as i64,
         timestamp_ms_hi_inclusive: summary.timestamp_ms as i64,
         epoch_lo: 0,
