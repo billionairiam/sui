@@ -702,6 +702,10 @@ pub enum SuiError {
 
     #[error("Nitro attestation verify failed: {0}")]
     NitroAttestationFailedToVerify(String),
+
+    // TODO: Consider using a nested enum for the different reasons for rejection.
+    #[error("Transaction rejected by consensus, reason: {reason}")]
+    TransactionRejectedByConsensus { reason: String },
 }
 
 #[repr(u64)]

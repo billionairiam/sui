@@ -185,7 +185,7 @@ pub struct SystemStateRequest {
     pub _unused: bool,
 }
 
-/// Response type for version 3 of the handle certifacte validator API.
+/// Response type for version 3 of the handle certificate validator API.
 ///
 /// The corresponding version 3 request type allows for a client to request events as well as
 /// input/output objects from a transaction's execution. Given Validators operate with very
@@ -393,6 +393,31 @@ impl SubmitTxResponse {
             },
         })
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct ConsensusTransactionPosition {
+    pub transaction_digest: TransactionDigest,
+    pub leader_round: u64,
+    pub block_authority_index: u32,
+    pub transaction_index: u32,
+}
+
+// TODO: Use protobuf for the request/response types.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WaitForEffectsRequest {
+    pub transaction_position: ConsensusTransactionPosition,
+    pub include_events: bool,
+    pub include_input_objects: bool,
+    pub include_output_objects: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WaitForEffectsResponse {
+    pub effects: TransactionEffects,
+    pub events: Option<TransactionEvents>,
+    pub input_objects: Option<Vec<Object>>,
+    pub output_objects: Option<Vec<Object>>,
 }
 
 impl From<HandleCertificateResponseV3> for HandleCertificateResponseV2 {

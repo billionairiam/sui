@@ -64,6 +64,7 @@ use sui_types::messages_consensus::{
     ConsensusTransaction, ConsensusTransactionKey, ConsensusTransactionKind,
     ExecutionTimeObservation, TimestampMs, VersionedDkgConfirmation,
 };
+use sui_types::messages_grpc::ConsensusTransactionPosition;
 use sui_types::signature::GenericSignature;
 use sui_types::storage::{BackingPackageStore, InputKey, ObjectStore};
 use sui_types::sui_system_state::epoch_start_sui_system_state::{
@@ -410,6 +411,8 @@ pub struct AuthorityPerEpochStore {
     tx_object_debts: OnceCell<mpsc::Sender<Vec<ObjectID>>>,
     // Saved at end of epoch for propagating observations to the next.
     end_of_epoch_execution_time_observations: OnceCell<StoredExecutionTimeObservations>,
+
+    mysticeti_rejected_transactions_notify_read: NotifyRead<ConsensusTransactionPosition, ()>,
 }
 
 /// AuthorityEpochTables contains tables that contain data that is only valid within an epoch.
@@ -619,6 +622,10 @@ pub struct AuthorityEpochTables {
     /// Execution time observations for congestion control.
     pub(crate) execution_time_observations:
         DBMap<(u64, AuthorityIndex), Vec<(ExecutionTimeObservationKey, Duration)>>,
+
+    /// Transactions that have been rejected through mysticeti.
+    // TODO: Propagate the reason for rejection.
+    pub(crate) mysticeti_rejected_transactions: DBMap<ConsensusTransactionPosition, ()>,
 }
 
 fn signed_transactions_table_default_config() -> DBOptions {
@@ -956,6 +963,7 @@ impl AuthorityPerEpochStore {
             tx_local_execution_time: OnceCell::new(),
             tx_object_debts: OnceCell::new(),
             end_of_epoch_execution_time_observations: OnceCell::new(),
+            mysticeti_rejected_transactions_notify_read: NotifyRead::new(),
         });
 
         s.update_buffer_stake_metric();
@@ -4506,6 +4514,51 @@ impl AuthorityPerEpochStore {
             "The following transactions were neither reverted nor checkpointed: {:?}",
             uncheckpointed_transactions
         );
+    }
+
+    pub(crate) async fn mysticeti_reject_transaction(
+        &self,
+        transaction_position: ConsensusTransactionPosition,
+    ) {
+        self.mysticeti_rejected_transactions
+            .insert(&transaction_position, &());
+        self.mysticeti_rejected_transactions_notify_read
+            .notify(&transaction_position, &());
+    }
+
+    /// Wait for a transaction to be rejected through mysticeti indefinitely.
+    /// Returns error either if the transaction has already been rejected, or if we have
+    /// waited for the duration without being notified.
+    /// Note: This function always return an error. This is a design choice that would allow
+    /// us to propagate the reason for rejection to the caller in the future.
+    pub(crate) async fn wait_for_mysticeti_rejection(
+        &self,
+        transaction_position: ConsensusTransactionPosition,
+        wait_duration: Duration,
+    ) -> SuiError {
+        let registration = self
+            .mysticeti_rejected_transactions_notify_read
+            .register_one(&transaction_position);
+        let rejected = self
+            .mysticeti_rejected_transactions
+            .get(&transaction_position)
+            .expect("DB read should not fail");
+
+        if rejected.is_some() {
+            // TODO: Propagate more detailed reason for rejection.
+            return SuiError::TransactionRejectedByConsensus {
+                reason: "Mysticeti rejection".to_string(),
+            };
+        }
+
+        match tokio::time::timeout(wait_duration, registration).await {
+            Ok(_) => SuiError::TransactionRejectedByConsensus {
+                reason: "Mysticeti rejection".to_string(),
+            },
+            Err(_) => SuiError::TransactionRejectedByConsensus {
+                reason: "Timed out".to_string(),
+            },
+        }
     }
 }
 

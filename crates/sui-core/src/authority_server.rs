@@ -15,26 +15,31 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     sync::Arc,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 use sui_network::{
     api::{Validator, ValidatorServer},
     tonic,
 };
-use sui_types::messages_grpc::{
-    HandleCertificateRequestV3, HandleCertificateResponseV3, RawSubmitTxResponse,
-};
-use sui_types::messages_grpc::{
-    HandleCertificateResponseV2, HandleTransactionResponse, ObjectInfoRequest, ObjectInfoResponse,
-    SubmitCertificateResponse, SystemStateRequest, TransactionInfoRequest, TransactionInfoResponse,
-};
-use sui_types::messages_grpc::{
-    HandleSoftBundleCertificatesRequestV3, HandleSoftBundleCertificatesResponseV3,
-};
 use sui_types::multiaddr::Multiaddr;
 use sui_types::sui_system_state::SuiSystemState;
 use sui_types::traffic_control::{ClientIdSource, PolicyConfig, RemoteFirewallConfig, Weight};
+use sui_types::{
+    effects::TransactionEffects,
+    messages_grpc::{
+        HandleCertificateRequestV3, HandleCertificateResponseV3, RawSubmitTxResponse,
+        WaitForEffectsRequest, WaitForEffectsResponse,
+    },
+};
 use sui_types::{effects::TransactionEffectsAPI, messages_grpc::SubmitTxResponse};
+use sui_types::{
+    effects::TransactionEvents,
+    messages_grpc::{
+        HandleCertificateResponseV2, HandleTransactionResponse, ObjectInfoRequest,
+        ObjectInfoResponse, SubmitCertificateResponse, SystemStateRequest, TransactionInfoRequest,
+        TransactionInfoResponse,
+    },
+};
 use sui_types::{error::*, transaction::*};
 use sui_types::{
     fp_ensure,
@@ -45,6 +50,12 @@ use sui_types::{
 use sui_types::{
     messages_consensus::{ConsensusTransaction, ConsensusTransactionKind},
     messages_grpc::RawSubmitTxRequest,
+};
+use sui_types::{
+    messages_grpc::{
+        HandleSoftBundleCertificatesRequestV3, HandleSoftBundleCertificatesResponseV3,
+    },
+    object::Object,
 };
 use tap::TapFallible;
 use tonic::metadata::{Ascii, MetadataValue};
@@ -892,6 +903,39 @@ impl ValidatorService {
 
         Ok((Some(responses), Weight::zero()))
     }
+
+    async fn collect_effects_data(
+        &self,
+        effects: &TransactionEffects,
+        include_events: bool,
+        include_input_objects: bool,
+        include_output_objects: bool,
+    ) -> SuiResult<(
+        Option<TransactionEvents>,
+        Option<Vec<Object>>,
+        Option<Vec<Object>>,
+    )> {
+        let events = if include_events && effects.events_digest().is_some() {
+            Some(
+                self.state
+                    .get_transaction_events(effects.transaction_digest())?,
+            )
+        } else {
+            None
+        };
+
+        let input_objects = include_input_objects
+            .then(|| self.state.get_transaction_input_objects(effects))
+            // TODO: Handle errors
+            .and_then(Result::ok);
+
+        let output_objects = include_output_objects
+            .then(|| self.state.get_transaction_output_objects(effects))
+            // TODO: Handle errors
+            .and_then(Result::ok);
+
+        Ok((events, input_objects, output_objects))
+    }
 }
 
 type WrappedServiceResponse<T> = Result<(tonic::Response<T>, Weight), tonic::Status>;
@@ -1008,6 +1052,43 @@ impl ValidatorService {
                 spam_weight,
             )
         })
+    }
+
+    async fn wait_for_effects_impl(
+        &self,
+        request: tonic::Request<WaitForEffectsRequest>,
+    ) -> WrappedServiceResponse<WaitForEffectsResponse> {
+        let request = request.into_inner();
+        let epoch_store = self.state.load_epoch_store_one_call_per_task();
+        let transactions = [request.transaction_position.transaction_digest];
+        let effects = tokio::select! {
+            rejection_err = epoch_store.wait_for_mysticeti_rejection(request.transaction_position.clone(), Duration::from_secs(10)) => {
+                Err(rejection_err)
+            },
+            mut effects = self.state
+                .get_transaction_cache_reader()
+                .notify_read_executed_effects(&transactions) => {
+                Ok(effects.pop().unwrap())
+            },
+        }?;
+        let (events, input_objects, output_objects) = self
+            .collect_effects_data(
+                &effects,
+                request.include_events,
+                request.include_input_objects,
+                request.include_output_objects,
+            )
+            .await?;
+        Ok((
+            tonic::Response::new(WaitForEffectsResponse {
+                effects,
+                events,
+                input_objects,
+                output_objects,
+            }),
+            // TODO: Implement spam weight
+            Weight::zero(),
+        ))
     }
 
     async fn soft_bundle_validity_check(
@@ -1290,7 +1371,7 @@ impl ValidatorService {
                             let Some(client_ip) = header_contents.get(contents_len - num_hops)
                             else {
                                 error!(
-                                    "x-forwarded-for header value of {:?} contains {} values, but {} hops were specificed. \
+                                    "x-forwarded-for header value of {:?} contains {} values, but {} hops were specified. \
                                     Expected at least {} values. Skipping traffic controller request handling.",
                                     header_contents,
                                     contents_len,
@@ -1485,6 +1566,13 @@ impl Validator for ValidatorService {
         request: tonic::Request<HandleCertificateRequestV3>,
     ) -> Result<tonic::Response<HandleCertificateResponseV3>, tonic::Status> {
         handle_with_decoration!(self, handle_certificate_v3_impl, request)
+    }
+
+    async fn wait_for_effects(
+        &self,
+        request: tonic::Request<WaitForEffectsRequest>,
+    ) -> Result<tonic::Response<WaitForEffectsResponse>, tonic::Status> {
+        handle_with_decoration!(self, wait_for_effects_impl, request)
     }
 
     async fn handle_soft_bundle_certificates_v3(

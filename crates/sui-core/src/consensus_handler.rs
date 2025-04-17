@@ -33,6 +33,7 @@ use sui_types::{
         AuthorityIndex, ConsensusDeterminedVersionAssignments, ConsensusTransaction,
         ConsensusTransactionKey, ConsensusTransactionKind, ExecutionTimeObservation,
     },
+    messages_grpc::ConsensusTransactionPosition,
     sui_system_state::epoch_start_sui_system_state::EpochStartSystemStateTrait,
     transaction::{SenderSignedData, VerifiedTransaction},
 };
@@ -708,10 +709,22 @@ impl<C: CheckpointServiceNotify + Send + Sync> ConsensusHandler<C> {
                 self.last_consensus_stats
                     .stats
                     .inc_num_messages(authority_index as usize);
-                for parsed in parsed_transactions {
+                for (tx_index, parsed) in parsed_transactions.into_iter().enumerate() {
                     // Skip executing rejected transactions. Unlocking is the responsibility of the
                     // consensus transaction handler.
                     if parsed.rejected {
+                        if let ConsensusTransactionKind::UserTransaction(tx) =
+                            &parsed.transaction.kind
+                        {
+                            self.epoch_store
+                                .mysticeti_reject_transaction(ConsensusTransactionPosition {
+                                    transaction_digest: *tx.digest(),
+                                    leader_round: commit_info.round,
+                                    block_authority_index: authority_index,
+                                    transaction_index: tx_index as u32,
+                                })
+                                .await;
+                        }
                         continue;
                     }
                     let kind = classify(&parsed.transaction);

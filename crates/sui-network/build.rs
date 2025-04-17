@@ -80,6 +80,15 @@ fn main() -> Result<()> {
         )
         .method(
             Method::builder()
+                .name("wait_for_effects")
+                .route_name("WaitForEffects")
+                .input_type("sui_types::messages_grpc::WaitForEffectsRequest")
+                .output_type("sui_types::messages_grpc::WaitForEffectsResponse")
+                .codec_path(codec_path)
+                .build(),
+        )
+        .method(
+            Method::builder()
                 .name("object_info")
                 .route_name("ObjectInfo")
                 .input_type("sui_types::messages_grpc::ObjectInfoRequest")
