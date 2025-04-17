@@ -5,7 +5,7 @@
 
 // This test is checking details about the test runner:
 //
-// (1) Tests will fail if the JSON-RPC query does not contian methods or
+// (1) Tests will fail if the JSON-RPC query does not contain methods or
 //     params.
 //     - No JSON object.
 //     - Missing params.
