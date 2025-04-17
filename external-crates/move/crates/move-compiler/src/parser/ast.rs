@@ -1558,9 +1558,149 @@ impl AstDebug for AttributeValue_ {
     }
 }
 
+impl AstDebug for ExpectedFailureKind_ {
+    fn ast_debug(&self, w: &mut AstWriter) {
+        use ExpectedFailureKind_ as K;
+        match self {
+            K::Empty => {
+                // nothing
+            }
+            K::Name(n) => {
+                w.write(n.value.as_str());
+            }
+            K::MajorStatus(v) => {
+                w.write("major_status=");
+                v.ast_debug(w);
+            }
+            K::AbortCode(av) => {
+                w.write("abort_code=");
+                av.ast_debug(w);
+            }
+        }
+    }
+}
+
+impl AstDebug for ParsedAttribute_ {
+    fn ast_debug(&self, w: &mut AstWriter) {
+        use ParsedAttribute_ as P;
+        match self {
+            // #[name]
+            P::Name(n) => {
+                w.write(n.value.as_str());
+            }
+            // #[name = value]
+            P::Assigned(name, boxed_val) => {
+                w.write(name.value.as_str());
+                w.write(" = ");
+                boxed_val.value.ast_debug(w);
+            }
+            // #[name(inner1, inner2, …)]
+            P::Parameterized(name, sp!(_, args)) => {
+                w.write(name.value.as_str());
+                w.write("(");
+                w.comma(args, |w, arg| {
+                    arg.ast_debug(w);
+                });
+                w.write(")");
+            }
+        }
+    }
+}
+
 impl AstDebug for Attribute_ {
-    fn ast_debug(&self, _w: &mut AstWriter) {
-        todo!()
+    fn ast_debug(&self, w: &mut AstWriter) {
+        use Attribute_ as A;
+        match self {
+            A::BytecodeInstruction => {
+                w.write("bytecode_instruction");
+            }
+            A::DefinesPrimitive(name) => {
+                w.write("defines_prim(");
+                w.write(name.value.as_str());
+                w.write(")");
+            }
+            A::Deprecation { note } => {
+                w.write("deprecation");
+                if let Some(sym) = note {
+                    w.write("(note=");
+                    w.write(sym.as_str());
+                    w.write(")");
+                }
+            }
+            A::Error { code } => {
+                w.write("error");
+                if let Some(val) = code {
+                    w.write("(code=");
+                    val.ast_debug(w);
+                    w.write(")");
+                }
+            }
+            A::External { attrs } => {
+                w.write("external(");
+                // attrs: Spanned<Vec<ParsedAttribute>>
+                w.comma(&attrs.value, |w, parsed| {
+                    parsed.ast_debug(w);
+                });
+                w.write(")");
+            }
+            A::Syntax { kind } => {
+                w.write("syntax(");
+                w.write(kind.value.as_str());
+                w.write(")");
+            }
+            A::VerifyOnly => {
+                w.write("verify_only");
+            }
+            A::Allow { allow_set } => {
+                w.write("allow(");
+                let mut first = true;
+                for (prefix, name) in allow_set {
+                    if !first { w.write(","); }
+                    first = false;
+                    if let Some(pref) = prefix {
+                        w.write(pref.value.as_str());
+                        w.write("(");
+                        w.write(name.value.as_str());
+                        w.write(")");
+                    } else {
+                        w.write(name.value.as_str());
+                    }
+                }
+                w.write(")");
+            }
+            A::LintAllow { allow_set } => {
+                w.write("lint_allow(");
+                w.comma(allow_set, |w, name| {
+                    w.write(name.value.as_str());
+                });
+                w.write(")");
+            }
+            A::Test => {
+                w.write("test");
+            }
+            A::TestOnly => {
+                w.write("test_only");
+            }
+            A::ExpectedFailure { failure_kind, minor_status, location } => {
+                w.write("expected_failure(");
+                // first the kind
+                failure_kind.value.ast_debug(w);
+                // then optional minor_status
+                if let Some(ms) = minor_status {
+                    w.write(",minor_status=");
+                    ms.ast_debug(w);
+                }
+                // then optional location
+                if let Some(loc) = location {
+                    w.write(",location=");
+                    loc.ast_debug(w);
+                }
+                w.write(")");
+            }
+            A::RandomTest => {
+                w.write("rand_test");
+            }
+        }
     }
 }
 
