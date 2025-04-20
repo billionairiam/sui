@@ -13,6 +13,7 @@ use std::time::Duration;
 use std::time::Instant;
 use sui_json_rpc_types::DevInspectArgs;
 use sui_json_rpc_types::SuiData;
+use sui_types::object::Object;
 use sui_json_rpc_types::ZkLoginIntentScope;
 use sui_json_rpc_types::ZkLoginVerifyResult;
 
@@ -646,6 +647,28 @@ impl ReadApi {
             .http
             .dry_run_transaction_block(Base64::from_bytes(&bcs::to_bytes(&tx)?))
             .await?)
+    }
+
+    pub async fn dry_run_transaction_block_override(
+        &self,
+        tx: TransactionData,
+        override_objects: Vec<(ObjectID, Object)>,
+    ) -> SuiRpcResult<DryRunTransactionBlockResponse> {
+        let resp = if let Some(ref ipc) = self.api.ipc {
+            ipc.dry_run_transaction_block_override(tx, override_objects)
+                .await
+                .map_err(|e| Error::IpcError(e.to_string()))?
+        } else {
+            self.api
+                .http
+                .dry_run_transaction_block_override(
+                    Base64::from_bytes(&bcs::to_bytes(&tx)?),
+                    Base64::from_bytes(&bcs::to_bytes(&override_objects)?),
+                )
+                .await?
+        };
+
+        Ok(resp)
     }
 
     /// Return the inspection of the transaction block, or an error upon failure.
