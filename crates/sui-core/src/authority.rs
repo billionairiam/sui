@@ -1560,7 +1560,8 @@ impl AuthorityState {
         _execution_guard: ExecutionLockReadGuard<'_>,
         epoch_store: &Arc<AuthorityPerEpochStore>,
     ) -> SuiResult {
-        let _ = self.tx_handler.send_tx_effects(effects);
+        let events = &inner_temporary_store.events;
+        let _ = self.tx_handler.send_tx_effects(effects, events);
         let _scope: Option<mysten_metrics::MonitoredScopeGuard> =
             monitored_scope("Execution::commit_certificate");
         let _metrics_guard = self.metrics.commit_certificate_latency.start_timer();
