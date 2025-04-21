@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::congestion_tracker::CongestionTracker;
+use crate::cache_update_handler::CacheUpdateHandler;
 use crate::consensus_adapter::ConsensusOverloadChecker;
 use crate::execution_cache::ExecutionCacheTraitPointers;
 use crate::execution_cache::TransactionCacheRead;
@@ -855,6 +856,8 @@ pub struct AuthorityState {
 
     pub validator_tx_finalizer: Option<Arc<ValidatorTxFinalizer<NetworkAuthorityClient>>>,
 
+    pub cache_update_handler: CacheUpdateHandler,
+
     /// The chain identifier is derived from the digest of the genesis checkpoint.
     chain_identifier: ChainIdentifier,
 
@@ -1580,13 +1583,24 @@ impl AuthorityState {
         // Allow testing what happens if we crash here.
         fail_point!("crash");
 
-        let transaction_outputs = TransactionOutputs::build_transaction_outputs(
+        let transaction_outputs = Arc::new(TransactionOutputs::build_transaction_outputs(
             certificate.clone().into_unsigned(),
             effects.clone(),
             inner_temporary_store,
-        );
+        ));
+
+        let mut package_updates = Vec::new();
+        for (id, object) in transaction_outputs.written.iter() {
+            if object.is_package() {
+                package_updates.push((*id, object.clone()));
+            }
+        }
+
         self.get_cache_writer()
-            .write_transaction_outputs(epoch_store.epoch(), transaction_outputs.into());
+            .write_transaction_outputs(epoch_store.epoch(), transaction_outputs);
+        
+        self.cache_update_handler
+            .update_cache(package_updates);
 
         if certificate.transaction_data().is_end_of_epoch_tx() {
             // At the end of epoch, since system packages may have been upgraded, force
@@ -1728,6 +1742,7 @@ impl AuthorityState {
         });
 
         let elapsed = prepare_certificate_start_time.elapsed().as_micros() as f64;
+        info!("elapsed={:.2}us", elapsed);
         if elapsed > 0.0 {
             self.metrics
                 .prepare_cert_gas_latency_ratio
@@ -3204,6 +3219,7 @@ impl AuthorityState {
             config,
             overload_info: AuthorityOverloadInfo::default(),
             validator_tx_finalizer,
+            cache_update_handler: CacheUpdateHandler::new(),
             chain_identifier,
             congestion_tracker: Arc::new(CongestionTracker::new()),
         });

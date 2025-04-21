@@ -762,3 +762,17 @@ sui-execution = { path = "sui-execution" }
 tonic = "0.13"
 
 [patch.crates-io]
+
+[registries.crates-io]
+protocol = "sparse" # Use the sparse protocol (default in recent Rust)
+
+# Choose ONE of the replace-with lines below based on a mirror near you
+# replace-with = "tuna"       # Tsinghua University (China)
+# replace-with = "sjtu"       # Shanghai Jiao Tong University (China)
+# replace-with = "ustc"       # University of Science and Technology of China
+# replace-with = "rsproxy"    # rsproxy.cn (China)
+# Add other mirrors if you know them
+
+# Example using Tsinghua University mirror:
+[source.tuna]
+registry = "https://mirrors.tuna.tsinghua.edu.cn/crates.io-index"
