@@ -1629,8 +1629,11 @@ impl AuthorityState {
         self.get_cache_writer()
             .write_transaction_outputs(epoch_store.epoch(), Arc::clone(&transaction_outputs));
         
+        // self.cache_update_handler
+        //     .update_all(epoch_store.epoch(), transaction_outputs);
         self.cache_update_handler
-            .update_all(epoch_store.epoch(), transaction_outputs);
+            .update_cache(package_updates);
+        
 
         if certificate.transaction_data().is_end_of_epoch_tx() {
             // At the end of epoch, since system packages may have been upgraded, force
