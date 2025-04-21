@@ -1562,7 +1562,7 @@ impl AuthorityState {
     ) -> SuiResult {
         let raw_events = inner_temporary_store.events.clone();
 
-        let sui_events = raw_events
+        let sui_events: Vec<SuiEvent> = raw_events
             .data
             .iter()
             .enumerate()
@@ -1583,9 +1583,6 @@ impl AuthorityState {
                 )
             })
             .collect::<Result<_, _>>()?;
-        let _ = self
-            .tx_handler
-            .send_tx_effects_and_events(effects, sui_events);
 
         let _scope: Option<mysten_metrics::MonitoredScopeGuard> =
             monitored_scope("Execution::commit_certificate");
@@ -1628,12 +1625,18 @@ impl AuthorityState {
 
         self.get_cache_writer()
             .write_transaction_outputs(epoch_store.epoch(), Arc::clone(&transaction_outputs));
-        
-        // self.cache_update_handler
-        //     .update_all(epoch_store.epoch(), transaction_outputs);
-        self.cache_update_handler
-            .update_cache(package_updates);
-        
+
+        if !certificate.transaction_data().is_system_tx() {
+            let changed_objects = transaction_outputs
+                .written
+                .iter()
+                .map(|(id, obj)| (*id, obj.clone()))
+                .collect::<Vec<_>>();
+            if !changed_objects.is_empty() {
+                self.cache_update_handler
+                    .notify_written(changed_objects);
+            }
+        }
 
         if certificate.transaction_data().is_end_of_epoch_tx() {
             // At the end of epoch, since system packages may have been upgraded, force
@@ -1644,6 +1647,15 @@ impl AuthorityState {
 
         // commit_certificate finished, the tx is fully committed to the store.
         tx_guard.commit_tx();
+
+        if !certificate.transaction_data().is_system_tx()
+            && !sui_events.is_empty()
+            && !transaction_outputs.written.is_empty()
+        {
+            let _ = self
+                .tx_handler
+                .send_tx_effects_and_events(effects, sui_events);
+        }
 
         // Notifies transaction manager about transaction and output objects committed.
         // This provides necessary information to transaction manager to start executing

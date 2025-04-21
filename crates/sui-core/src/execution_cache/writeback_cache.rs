@@ -395,6 +395,17 @@ impl CachedCommittedData {
         assert!(self.executed_effects_digests.is_empty());
         assert_empty(&self._transaction_objects);
     }
+
+    fn clear(&self) {
+        self.object_cache.invalidate_all();
+        self.object_by_id_cache.invalidate_all();
+        self.marker_cache.invalidate_all();
+        self.transactions.invalidate_all();
+        self.transaction_effects.invalidate_all();
+        self.transaction_events.invalidate_all();
+        self.executed_effects_digests.invalidate_all();
+        self._transaction_objects.invalidate_all();
+    }
 }
 
 fn assert_empty<K, V>(cache: &MokaCache<K, V>)
@@ -426,7 +437,7 @@ pub struct WritebackCache {
     object_locks: ObjectLocks,
 
     executed_effects_digests_notify_read: NotifyRead<TransactionDigest, TransactionEffectsDigest>,
-    store: Arc<AuthorityStore>,
+    pub store: Arc<AuthorityStore>,
     backpressure_threshold: u64,
     backpressure_manager: Arc<BackpressureManager>,
     metrics: Arc<ExecutionCacheMetrics>,
@@ -1280,6 +1291,32 @@ impl WritebackCache {
         self.packages.invalidate_all();
         assert_empty(&self.packages);
     }
+
+    pub fn reload_cached(&self, objects: &[ObjectID]) {
+        for object_id in objects {
+            self.cached.object_cache.invalidate(object_id);
+        }
+
+        // reload from db
+        for object_id in objects {
+            let obj = self.store.get_object(object_id);
+            if let Some(obj) = obj {
+                self.cached.object_by_id_cache.insert(
+                    object_id,
+                    LatestObjectCacheEntry::Object(obj.version(), obj.into()),
+                    Ticket::Write,
+                );
+            } else {
+                self.cached
+                    .object_by_id_cache
+                    .insert(object_id, LatestObjectCacheEntry::NonExistent, Ticket::Write);
+            }
+        }
+    }
+
+    pub fn clear(&self) {
+        self.cached.clear();
+    }
 }
 
 impl ExecutionCacheAPI for WritebackCache {}
@@ -2055,6 +2092,10 @@ impl TransactionCacheRead for WritebackCache {
 }
 
 impl ExecutionCacheWrite for WritebackCache {
+    fn reload_objects(&self, objects: Vec<ObjectID>) {
+        self.reload_cached(&objects);
+    }
+
     fn acquire_transaction_locks(
         &self,
         epoch_store: &AuthorityPerEpochStore,
