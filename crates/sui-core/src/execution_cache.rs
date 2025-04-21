@@ -572,7 +572,9 @@ pub trait ExecutionCacheWrite: Send + Sync {
         package_updates: &'a [(ObjectID, Object)],
     ) -> BoxFuture<'a, SuiResult>;
 
-    fn reload_objects(&self, objects: Vec<ObjectID>);
+    fn reload_objects(&self, objects: Vec<(ObjectID, Object)>);
+
+    fn update_underlying(&self, clear_cache: bool);
 }
 
 pub trait CheckpointCache: Send + Sync {

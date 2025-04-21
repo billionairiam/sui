@@ -4,17 +4,32 @@ use std::sync::{
     Arc,
 };
 use sui_types::base_types::ObjectID;
-use sui_types::committee::EpochId;
 use sui_types::object::Object;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
 
 use tracing::{error, info};
-
-use crate::transaction_outputs::TransactionOutputs;
+use dashmap::DashSet;
 
 const SOCKET_PATH: &str = "/tmp/sui_cache_updates.sock";
+
+pub const POOL_RELATED_OBJECTS_PATH: &str = "/home/ubuntu/sui/pool_related_ids.txt";
+
+pub fn pool_related_object_ids() -> DashSet<ObjectID> {
+    let content = std::fs::read_to_string(POOL_RELATED_OBJECTS_PATH)
+        .unwrap_or_else(|_| panic!("Failed to open: {}", POOL_RELATED_OBJECTS_PATH));
+
+    let set = DashSet::new();
+    content
+        .trim()
+        .split('\n')
+        .map(|line| line.parse().expect("Failed to parse pool_related_ids"))
+        .for_each(|id| {
+            set.insert(id);
+        });
+    set
+}
 
 #[derive(Debug)]
 pub struct CacheUpdateHandler {
