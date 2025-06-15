@@ -1,6 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use serde::{Deserialize, Serialize};
 use move_core_types::ident_str;
 use move_core_types::identifier::IdentStr;
 
@@ -9,7 +10,7 @@ use crate::effects::AccumulatorWriteV1;
 
 pub const ACCUMULATOR_MODULE_NAME: &IdentStr = ident_str!("accumulator");
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccumulatorEvent {
     pub accumulator_obj: ObjectID,
     pub write: AccumulatorWriteV1,
