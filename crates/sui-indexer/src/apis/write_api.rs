@@ -6,6 +6,7 @@ use fastcrypto::encoding::Base64;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::http_client::HttpClient;
 use jsonrpsee::RpcModule;
+use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, ErrorObject};
 
 use sui_json_rpc::SuiRpcModule;
 use sui_json_rpc_api::{WriteApiClient, WriteApiServer};
@@ -91,7 +92,14 @@ impl WriteApiServer for WriteApi {
         self.fullnode
             .dry_run_transaction_block_override(tx_bytes, override_objects)
             .await
-    }
+            .map_err(|e| {
+                    ErrorObject::owned(
+                        INTERNAL_ERROR_CODE, // A standard JSON-RPC error code
+                        e.to_string(),       // The descriptive error message from the client
+                        None::<()>,          // Optional additional data
+                    )
+                })
+            }
 }
 
 impl SuiRpcModule for WriteApi {
