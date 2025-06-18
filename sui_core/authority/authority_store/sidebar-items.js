@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LockDetailsWrapperDeprecated","ObjectLockStatus","UpdateType"],"struct":["AuthorityStore","LockDetailsV1Deprecated","ResolverWrapper"],"type":["ExecutionLockReadGuard","ExecutionLockWriteGuard","LockDetailsDeprecated","SuiLockResult"]};

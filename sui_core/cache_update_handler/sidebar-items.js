@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POOL_RELATED_OBJECTS_PATH"],"fn":["pool_related_object_ids"],"struct":["CacheUpdateHandler"]};
