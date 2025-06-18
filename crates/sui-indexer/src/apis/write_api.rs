@@ -93,13 +93,13 @@ impl WriteApiServer for WriteApi {
             .dry_run_transaction_block_override(tx_bytes, override_objects)
             .await
             .map_err(|e| {
-                    ErrorObject::owned(
-                        INTERNAL_ERROR_CODE, // A standard JSON-RPC error code
-                        e.to_string(),       // The descriptive error message from the client
-                        None::<()>,          // Optional additional data
-                    )
-                })
-            }
+                ErrorObject::owned(
+                    INTERNAL_ERROR_CODE, // A standard JSON-RPC error code
+                    e.to_string(),       // The descriptive error message from the client
+                    None::<()>,          // Optional additional data
+                )
+            })
+    }
 }
 
 impl SuiRpcModule for WriteApi {

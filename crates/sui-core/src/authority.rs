@@ -2082,7 +2082,6 @@ impl AuthorityState {
         };
 
         // make a gas object if one was not provided
-        let mut gas_object_refs = transaction.gas().to_vec();
         let mut gas_data = transaction.gas_data().clone();
         let ((gas_status, checked_input_objects), mock_gas) = if transaction.gas().is_empty() {
             let sender = transaction.sender();
@@ -2097,7 +2096,6 @@ impl AuthorityState {
                 TransactionDigest::genesis_marker(),
             );
             let gas_object_ref = gas_object.compute_object_reference();
-            gas_object_refs = vec![gas_object_ref];
             gas_data.payment = vec![gas_object_ref];
             (
                 sui_transaction_checks::check_transaction_input_with_given_gas(

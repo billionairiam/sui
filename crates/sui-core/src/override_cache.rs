@@ -69,20 +69,32 @@ impl InputLoaderCache<'_> {
                         object: ObjectReadResultKind::Object(package),
                     });
                 }
-                InputObjectKind::SharedMoveObject { id, .. } => match self.get_object(id) {
-                    Some(object) => {
-                        input_results[i] = Some(ObjectReadResult::new(*kind, object.into()))
-                    }
-                    None => {
-                        if let Some((version, digest)) =
-                            self.get_last_consensus_stream_end_info(FullObjectID::new(*id, None), epoch_id)
-                        {
-                            input_results[i] = Some(ObjectReadResult {
-                                input_object_kind: *kind,
-                                object: ObjectReadResultKind::ObjectConsensusStreamEnded(version, digest),
-                            });
-                        } else {
-                            return Err(SuiError::from(kind.object_not_found_error()));
+                InputObjectKind::SharedMoveObject { .. } => {
+                    let input_full_id = kind.full_object_id();
+
+                    match self.get_object(&kind.object_id()) {
+                        // If full ID matches, we're done.
+                        // (Full ID may not match if object was transferred in or out of
+                        // consensus. We have to double-check this because cache is keyed
+                        // on ObjectID and not FullObjectID.)
+                        Some(object) if object.full_id() == input_full_id => {
+                            input_results[i] = Some(ObjectReadResult::new(*kind, object.into()))
+                        }
+                        _ => {
+                            // If the full ID doesn't match, check if the object's consensus
+                            // stream was ended.
+                            if let Some((version, digest)) = self
+                                .get_last_consensus_stream_end_info(input_full_id, epoch_id)
+                            {
+                                input_results[i] = Some(ObjectReadResult {
+                                    input_object_kind: *kind,
+                                    object: ObjectReadResultKind::ObjectConsensusStreamEnded(
+                                        version, digest,
+                                    ),
+                                });
+                            } else {
+                                return Err(SuiError::from(kind.object_not_found_error()));
+                            }
                         }
                     }
                 },
@@ -124,8 +136,11 @@ impl InputLoaderCache<'_> {
         for objref in receiving_objects {
             // Note: the digest is checked later in check_transaction_input
             let (object_id, version, _) = objref;
-            let object_key = FullObjectKey::new(FullObjectID::new(object_id.clone(), None), version.clone());
-            if self.have_received_object_at_version(object_key, epoch_id) {
+
+            if self.have_received_object_at_version(
+                FullObjectKey::new(FullObjectID::new(*object_id, None), *version),
+                epoch_id,
+            ) {
                 receiving_results.push(ReceivingObjectReadResult::new(
                     *objref,
                     ReceivingObjectReadResultKind::PreviouslyReceivedObject,

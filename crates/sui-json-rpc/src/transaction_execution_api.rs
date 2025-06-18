@@ -304,7 +304,7 @@ impl TransactionExecutionApi {
             .await?;
         let mut object_cache =
             ObjectProviderCache::new_with_cache(self.state.clone(), written_objects);
-        object_cache.insert_objects_into_cache(
+            object_cache.insert_objects_into_cache(
             override_objects.into_iter().map(|(_id, obj)| obj).collect(),
         );
         let balance_changes = get_balance_changes_from_effect(
